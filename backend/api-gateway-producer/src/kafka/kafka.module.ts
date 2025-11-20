@@ -11,7 +11,7 @@ import { ClientsModule, Transport } from '@nestjs/microservices';
         options: {
           client: {
             clientId: 'producer',
-            brokers: ['localhost:9092'], // Địa chỉ Kafka đang chạy từ Docker
+            brokers: [process.env.KAFKA_BROKER ||'localhost:9092'], // Địa chỉ Kafka đang chạy từ Docker
           },
           producer: {
             allowAutoTopicCreation: true,

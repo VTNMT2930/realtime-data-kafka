@@ -13,13 +13,13 @@ import { ConsumerInstance } from "./consumers/entities/consumer-instance.entity"
     ConsumersModule,
     TypeOrmModule.forRoot({
       type: "postgres",
-      host: "localhost",
-      port: 5432,
-      username: "postgres",
-      password: "1111",
-      database: "consumer_logs",
+      host: process.env.DB_HOST || "localhost",
+      port: parseInt(process.env.DB_PORT || "5432"),
+      username: process.env.DB_USERNAME || "",
+      password: process.env.DB_PASSWORD || "",
+      database: process.env.DB_DATABASE || "consumer_logs",
       entities: [ConsumerLog, ConsumerInstance],
-      synchronize: true, // Tự động tạo/cập nhật schema (chỉ dùng trong dev)
+      synchronize: process.env.DB_SYNC === "true", // Tự động tạo/cập nhật schema (chỉ dùng trong dev)
     }),
   ],
   controllers: [],
