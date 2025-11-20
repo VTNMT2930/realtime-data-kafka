@@ -46,7 +46,7 @@ export class AdminService implements OnModuleInit, OnModuleDestroy {
   // Khởi tạo WebSocket connection đến Consumer Service
   private initializeConsumerServiceSocket() {
     const consumerServiceUrl =
-      process.env.CONSUMER_SERVICE_URL || 'http://127.0.0.1:3001';
+      process.env.CONSUMER_SERVICE_URL || 'http://3.107.102.127:3001';
 
     console.log('[Admin] Connecting to Consumer Service WebSocket...');
 
@@ -176,7 +176,7 @@ export class AdminService implements OnModuleInit, OnModuleDestroy {
     try {
       // Query producer-log database để lấy statistics
       const response = await axios.get(
-        'http://127.0.0.1:3000/api/producers/statistics',
+        'http://3.107.102.127:3000/api/producers/statistics',
         {
           timeout: 5000,
         },
@@ -211,7 +211,7 @@ export class AdminService implements OnModuleInit, OnModuleDestroy {
     try {
       // Query consumer instances từ Consumer Service
       const consumerServiceUrl =
-        process.env.CONSUMER_SERVICE_URL || 'http://127.0.0.1:3001';
+        process.env.CONSUMER_SERVICE_URL || 'http://3.107.102.127:3001';
       const response = await axios.get(
         `${consumerServiceUrl}/api/consumers/instances`,
         {
@@ -421,7 +421,7 @@ export class AdminService implements OnModuleInit, OnModuleDestroy {
           // Query tất cả consumers từ database để tránh trùng ID
           // Force IPv4
           const consumerServiceUrl =
-            process.env.CONSUMER_SERVICE_URL || 'http://127.0.0.1:3001';
+            process.env.CONSUMER_SERVICE_URL || 'http://3.107.102.127:3001';
           const response = await axios.get(
             `${consumerServiceUrl}/api/consumers/stats`,
             {
@@ -455,7 +455,7 @@ export class AdminService implements OnModuleInit, OnModuleDestroy {
       // Kiểm tra xem consumer đã chạy chưa - ALWAYS check Consumer Service DB for authoritative state
       try {
         const consumerServiceUrl =
-          process.env.CONSUMER_SERVICE_URL || 'http://127.0.0.1:3001';
+          process.env.CONSUMER_SERVICE_URL || 'http://3.107.102.127:3001';
         const response = await axios.get(
           `${consumerServiceUrl}/api/consumers/stats`,
           {
@@ -596,7 +596,7 @@ export class AdminService implements OnModuleInit, OnModuleDestroy {
       // Query từ Consumer Service API thay vì dùng local Map
       // Force IPv4 để tránh lỗi ECONNREFUSED với ::1
       const consumerServiceUrl =
-        process.env.CONSUMER_SERVICE_URL || 'http://127.0.0.1:3001';
+        process.env.CONSUMER_SERVICE_URL || 'http://3.107.102.127:3001';
 
       const response = await axios.get(
         `${consumerServiceUrl}/api/consumers/stats`,
@@ -689,7 +689,7 @@ export class AdminService implements OnModuleInit, OnModuleDestroy {
       );
 
       const consumerServiceUrl =
-        process.env.CONSUMER_SERVICE_URL || 'http://127.0.0.1:3001';
+        process.env.CONSUMER_SERVICE_URL || 'http://3.107.102.127:3001';
 
       const response = await axios.get(
         `${consumerServiceUrl}/api/consumers/stats`,
@@ -749,7 +749,7 @@ export class AdminService implements OnModuleInit, OnModuleDestroy {
   async deleteConsumer(consumerId: string) {
     try {
       const consumerServiceUrl =
-        process.env.CONSUMER_SERVICE_URL || 'http://127.0.0.1:3001';
+        process.env.CONSUMER_SERVICE_URL || 'http://3.107.102.127:3001';
 
       // Gọi API của Consumer Service để xóa khỏi database
       const response = await axios.delete(

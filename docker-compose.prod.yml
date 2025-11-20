@@ -60,6 +60,7 @@ services:
       - DB_PASSWORD=admin
       - DB_DATABASE=producer_logs
       - DB_SYNC=true # Tự tạo bảng
+      - CONSUMER_SERVICE_URL=http://3.107.102.127:3001
     depends_on:
       - kafka
       - postgres
