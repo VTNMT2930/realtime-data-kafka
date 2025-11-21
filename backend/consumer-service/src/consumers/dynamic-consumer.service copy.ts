@@ -2,22 +2,20 @@ import { Injectable, OnModuleDestroy, OnModuleInit, Logger } from '@nestjs/commo
 import { Kafka, Consumer } from 'kafkajs';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
+// Đảm bảo file entity này tồn tại ở đúng đường dẫn này
 import { ConsumerInstance } from './entities/consumer-instance.entity';
-// 1. Import Entity và Enum Log
-import { ConsumerLog, ConsumerLogStatus } from './entities/consumer-log.entity';
 
 @Injectable()
 export class DynamicConsumerService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(DynamicConsumerService.name);
   private kafka: Kafka;
+  // Map quản lý: Key = "groupId-index", Value = Consumer Object
   private activeConsumers: Map<string, Consumer> = new Map();
 
   constructor(
+    // Inject Repository để thao tác với DB
     @InjectRepository(ConsumerInstance)
     private instanceRepo: Repository<ConsumerInstance>,
-    // 2. Inject Repository Log để lưu tin nhắn
-    @InjectRepository(ConsumerLog)
-    private logRepo: Repository<ConsumerLog>,
   ) {}
 
   onModuleInit() {
@@ -26,6 +24,7 @@ export class DynamicConsumerService implements OnModuleInit, OnModuleDestroy {
       brokers: ['kafka:29092'],
     });
     
+    // Tự động khôi phục các consumer khi restart container (nếu cần)
     this.restoreActiveConsumers();
   }
 
@@ -35,54 +34,63 @@ export class DynamicConsumerService implements OnModuleInit, OnModuleDestroy {
     }
   }
   
+  // Hàm khôi phục (Optional)
   private async restoreActiveConsumers() {
      try {
-       // Logic restore nếu cần (để trống tạm thời theo yêu cầu giữ nguyên logic cũ)
-     } catch (error) {}
+       const activeInstances = await this.instanceRepo.find({ where: { status: 'active' } });
+       for(const instance of activeInstances) {
+          this.logger.log(`[Restore] Tìm thấy instance cần restore: ${instance.id}`);
+          // Logic restore cụ thể sẽ thêm ở đây sau
+       }
+     } catch (error) {
+       this.logger.warn('Chưa thể restore consumer, có thể do bảng chưa khởi tạo.');
+     }
   }
 
   /**
-   * TẠO CONSUMER NÂNG CAO (Đã thêm logic lưu Log)
+   * TẠO CONSUMER NÂNG CAO VÀ LƯU DB
    */
   async createAdvancedConsumer(groupId: string, topics: string[], instanceCount: number) {
-    this.logger.log(`[Dynamic] Tạo Group: ${groupId} | Topics: ${topics} | Instance: ${instanceCount}`);
+    this.logger.log(`[Dynamic] Yêu cầu tạo Group: ${groupId} | Topics: ${topics} | Instance: ${instanceCount}`);
 
     const results = [];
 
     for (let i = 0; i < instanceCount; i++) {
+      // Tạo ID duy nhất: groupName-inst-0, groupName-inst-1...
       const instanceId = `${groupId}-inst-${i}`;
 
       if (this.activeConsumers.has(instanceId)) {
-        this.logger.warn(`Instance ${instanceId} đã chạy, update DB.`);
-        await this.saveInstanceToDB(instanceId, groupId, topics, 'ACTIVE');
+        this.logger.warn(`Instance ${instanceId} đã tồn tại trong RAM, cập nhật lại DB.`);
+        // Vẫn cập nhật DB để đảm bảo status là active
+        await this.saveInstanceToDB(instanceId, groupId, topics, 'active');
         continue;
       }
 
       try {
+        // 1. Khởi tạo Kafka Consumer
         const consumer = this.kafka.consumer({ groupId: groupId });
         await consumer.connect();
         await consumer.subscribe({ topics: topics, fromBeginning: true });
 
-        // --- LOGIC NHẬN VÀ LƯU TIN NHẮN ---
         await consumer.run({
           eachMessage: async ({ topic, partition, message }) => {
-             const value = message.value ? message.value.toString() : '';
-             const offset = message.offset;
-             
-             this.logger.debug(`[${instanceId}] Nhận tin: ${value}`);
-
-             // 3. GỌI HÀM LƯU DB NGAY TẠI ĐÂY
-             await this.saveMessageToDB(instanceId, topic, partition, offset, value);
+             // Logic xử lý message (có thể lưu log vào bảng consumer_logs ở đây)
+             // console.log(`Message: ${message.value.toString()}`);
           },
         });
 
+        // 2. Lưu vào RAM
         this.activeConsumers.set(instanceId, consumer);
-        await this.saveInstanceToDB(instanceId, groupId, topics, 'ACTIVE');
+        
+        // 3. QUAN TRỌNG: Lưu vào DATABASE
+        await this.saveInstanceToDB(instanceId, groupId, topics, 'active');
+        
         results.push(instanceId as never);
         
       } catch (error) {
         this.logger.error(`Lỗi tạo instance ${instanceId}:`, error);
-        await this.saveInstanceToDB(instanceId, groupId, topics, 'ERROR');
+        // Nếu lỗi thì lưu status inactive
+        await this.saveInstanceToDB(instanceId, groupId, topics, 'error');
       }
     }
 
@@ -93,61 +101,41 @@ export class DynamicConsumerService implements OnModuleInit, OnModuleDestroy {
     };
   }
 
-  // --- HÀM MỚI: LƯU MESSAGE VÀO DB ---
-  private async saveMessageToDB(consumerId: string, topic: string, partition: number, offset: string, value: string) {
-    try {
-      // Thử parse JSON để lấy ID gốc nếu có (cho đẹp data), không thì random
-      let originalLogId = `unknown-${Date.now()}`;
-      try {
-          const parsed = JSON.parse(value);
-          if (parsed.id || parsed.transactionId) {
-              originalLogId = parsed.id || parsed.transactionId;
-          }
-      } catch (e) {}
-
-      // Tạo Entity theo đúng cấu trúc bạn đã gửi trong consumer-log.entity.ts
-      const log = this.logRepo.create({
-        consumerId: consumerId,
-        originalLogId: originalLogId, // Field này bắt buộc trong entity của bạn
-        topic: topic,
-        partition: partition,
-        offset: offset,
-        data: value, // Lưu toàn bộ nội dung tin nhắn
-        status: ConsumerLogStatus.PROCESSED, // Đánh dấu là đã xử lý thành công
-        // timestamp tự động tạo
-      });
-      
-      await this.logRepo.save(log);
-      // this.logger.verbose(`Đã lưu log offset ${offset}`);
-    } catch (error) {
-      this.logger.error(`Lỗi lưu Log DB: ${error.message}`);
-    }
-  }
-
-  // Helper: Lưu trạng thái Instance (Giữ nguyên logic cũ)
+  // Helper để lưu DB gọn gàng hơn
   private async saveInstanceToDB(instanceId: string, groupId: string, topics: string[], status: string) {
     try {
+      // 1. Map dữ liệu vào đúng trường của Entity
+      // Lưu ý: Entity dùng 'id', không phải 'consumerId'
       const instanceData = {
-        id: instanceId,
-        groupId: groupId,
-        topics: topics.join(','),
+        id: instanceId,          // Map instanceId vào cột id
+        groupId: groupId,        // Cột mới thêm
+        topics: topics.join(','),// Cột mới thêm
         status: status,
-        topicName: topics[0],
+        topicName: topics[0],    // Lưu topic đầu tiên vào cột cũ để tương thích (optional)
         pid: 0,
         lastHeartbeat: new Date(),
         isDeleted: false
       };
 
+      // 2. Kiểm tra tồn tại và Upsert
       const existing = await this.instanceRepo.findOne({ where: { id: instanceId } });
 
       if (existing) {
-        await this.instanceRepo.update({ id: instanceId }, { ...instanceData, updatedAt: new Date() });
+        await this.instanceRepo.update(
+          { id: instanceId }, 
+          {
+            ...instanceData,
+            updatedAt: new Date()
+          }
+        );
       } else {
         const instance = this.instanceRepo.create(instanceData);
         await this.instanceRepo.save(instance);
       }
+      
+      this.logger.log(`[DB] Đã lưu instance ${instanceId} (Group: ${groupId}) vào Database.`);
     } catch (error) {
-      this.logger.error(`Lỗi lưu Instance DB: ${error.message}`);
+      this.logger.error(`Lỗi lưu DB cho ${instanceId}:`, error);
     }
   }
 
@@ -175,5 +163,8 @@ export class DynamicConsumerService implements OnModuleInit, OnModuleDestroy {
         }
       }
     }
+    
+    keysToRemove.forEach(k => this.activeConsumers.delete(k));
+    return { success: true, stopped: keysToRemove.length };
   }
 }
