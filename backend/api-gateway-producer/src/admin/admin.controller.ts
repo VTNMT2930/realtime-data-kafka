@@ -61,29 +61,26 @@ export class AdminController {
 
   // ==================== CONSUMER MANAGEMENT ====================
 
-  // Endpoint để tạo consumer mới (POST /admin/consumers)
-  @Post('consumers')
-  spawnConsumer(@Body() createConsumerDto: CreateConsumerDto) {
-    return this.adminService.spawnConsumer(
-      createConsumerDto.consumerId,
-      createConsumerDto.groupId,
-      createConsumerDto.topicName, // ✅ Truyền topicName
-    );
+  /**
+   * Endpoint tạo Consumer: Đổi từ spawnConsumer sang createConsumer (Scale)
+   */
+  // @Post('consumers')
+  // createConsumer(@Body() createConsumerDto: CreateConsumerDto) {
+  //   // Logic mới: Gọi hàm scale trong service
+  //   return this.adminService.createConsumer(createConsumerDto);
+  // }
+
+    // admin.controller.ts
+  @Post('consumers/advanced')
+  createAdvanced(@Body() body: { groupId: string, topics: string[], count: number }) {
+      return this.adminService.createAdvancedConsumer(body.groupId, body.topics, body.count);
   }
 
-  // Endpoint để lấy danh sách consumers đang chạy (GET /admin/consumers)
-  @Get('consumers')
-  getRunningConsumers() {
-    return this.adminService.getRunningConsumers();
-  }
-
-  // Endpoint để stop consumer - kill process nhưng giữ record (PATCH /admin/consumers/:consumerId/stop)
   @Patch('consumers/:consumerId/stop')
   stopConsumer(@Param('consumerId') consumerId: string) {
     return this.adminService.stopConsumer(consumerId);
   }
 
-  // Endpoint để delete consumer - xóa hoàn toàn khỏi DB (DELETE /admin/consumers/:consumerId)
   @Delete('consumers/:consumerId')
   deleteConsumer(@Param('consumerId') consumerId: string) {
     return this.adminService.deleteConsumer(consumerId);
