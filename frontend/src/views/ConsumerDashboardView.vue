@@ -66,7 +66,7 @@ import SystemStatus from "@/components/common/SystemStatus.vue";
 import AddConsumerModal from "@/components/common/AddConsumerModal.vue";
 import ToastContainer from "@/components/common/ToastContainer.vue";
 import { useToast } from "@/composables/useToast";
-import { getConsumerInstances, stopConsumer, resumeConsumer, deleteConsumerInstance } from "@/services/apiService";
+import { getConsumerStats, stopConsumer, resumeConsumer, deleteConsumer } from "@/services/apiService";
 
 export default {
   name: "ConsumerDashboardView",
@@ -122,7 +122,7 @@ export default {
       this.loading = true;
       try {
         // Gọi API lấy danh sách
-        const data = await getConsumerInstances();
+        const data = await getConsumerStats();
         // Sắp xếp: Active lên đầu, sau đó theo ID
         this.consumerInstances = (data || []).sort((a, b) => {
            if (a.status === b.status) return a.id.localeCompare(b.id);
@@ -183,7 +183,7 @@ export default {
     async handleDeleteConsumer(id) {
         if(!confirm(`CẢNH BÁO: Bạn có chắc chắn muốn xóa vĩnh viễn ${id}?`)) return;
         try {
-            await deleteConsumerInstance(id);
+            await deleteConsumer(id);
             this.showToast("success", "Đã xóa instance khỏi hệ thống.");
             this.fetchConsumerData();
         } catch(e) {
