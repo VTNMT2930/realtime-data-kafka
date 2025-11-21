@@ -39,7 +39,7 @@ export class DynamicConsumerService implements OnModuleInit, OnModuleDestroy {
      try {
        const activeInstances = await this.instanceRepo.find({ where: { status: 'active' } });
        for(const instance of activeInstances) {
-          this.logger.log(`[Restore] Tìm thấy instance cần restore: ${instance.consumerId}`);
+          this.logger.log(`[Restore] Tìm thấy instance cần restore: ${instance.id}`);
           // Logic restore cụ thể sẽ thêm ở đây sau
        }
      } catch (error) {
@@ -104,30 +104,36 @@ export class DynamicConsumerService implements OnModuleInit, OnModuleDestroy {
   // Helper để lưu DB gọn gàng hơn
   private async saveInstanceToDB(instanceId: string, groupId: string, topics: string[], status: string) {
     try {
-      // Kiểm tra xem đã tồn tại chưa để dùng logic update hoặc create
-      const existing = await this.instanceRepo.findOne({ where: { consumerId: instanceId } });
+      // 1. Map dữ liệu vào đúng trường của Entity
+      // Lưu ý: Entity dùng 'id', không phải 'consumerId'
+      const instanceData = {
+        id: instanceId,          // Map instanceId vào cột id
+        groupId: groupId,        // Cột mới thêm
+        topics: topics.join(','),// Cột mới thêm
+        status: status,
+        topicName: topics[0],    // Lưu topic đầu tiên vào cột cũ để tương thích (optional)
+        pid: 0,
+        lastHeartbeat: new Date(),
+        isDeleted: false
+      };
+
+      // 2. Kiểm tra tồn tại và Upsert
+      const existing = await this.instanceRepo.findOne({ where: { id: instanceId } });
 
       if (existing) {
         await this.instanceRepo.update(
-          { consumerId: instanceId }, 
+          { id: instanceId }, 
           {
-            status: status,
-            topics: topics.join(','), // Chuyển mảng thành chuỗi
+            ...instanceData,
             updatedAt: new Date()
           }
         );
       } else {
-        const instance = this.instanceRepo.create({
-          consumerId: instanceId,
-          groupId: groupId,
-          topics: topics.join(','),
-          status: status,
-          pid: 0
-        });
+        const instance = this.instanceRepo.create(instanceData);
         await this.instanceRepo.save(instance);
       }
       
-      this.logger.log(`[DB] Đã lưu instance ${instanceId} vào Database.`);
+      this.logger.log(`[DB] Đã lưu instance ${instanceId} (Group: ${groupId}) vào Database.`);
     } catch (error) {
       this.logger.error(`Lỗi lưu DB cho ${instanceId}:`, error);
     }
@@ -151,7 +157,7 @@ export class DynamicConsumerService implements OnModuleInit, OnModuleDestroy {
         
         // Cập nhật DB thành inactive
         try {
-            await this.instanceRepo.update({ consumerId: key }, { status: 'inactive' });
+            await this.instanceRepo.update({ id: key }, { status: 'inactive' });
         } catch (e) {
             this.logger.error(`Lỗi update DB status ${key}`, e);
         }
