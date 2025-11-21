@@ -7,6 +7,7 @@ import { ConsumersGateway } from "./consumers.gateway";
 import { TypeOrmModule } from "@nestjs/typeorm";
 import { ConsumerLog } from "./entities/consumer-log.entity";
 import { ConsumerInstance } from "./entities/consumer-instance.entity";
+import { DynamicConsumerService } from "./dynamic-consumer.service";
 
 @Module({
   imports: [
@@ -16,6 +17,6 @@ import { ConsumerInstance } from "./entities/consumer-instance.entity";
     TypeOrmModule.forFeature([ConsumerLog, ConsumerInstance]),
   ],
   controllers: [ConsumersController], // Controller sẽ lắng nghe Kafka
-  providers: [ConsumersService, ConsumersGateway],
+  providers: [ConsumersService, ConsumersGateway, DynamicConsumerService],
 })
 export class ConsumersModule {}
