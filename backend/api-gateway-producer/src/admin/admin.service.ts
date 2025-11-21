@@ -184,10 +184,11 @@ export class AdminService implements OnModuleInit, OnModuleDestroy {
   private async getProducerStatsByTopic(): Promise<
     Record<string, { totalRecords: number; batches: number }>
   > {
+    const producerServiceUrl = process.env.PRODUCER_SERVICE_URL || 'http://3.107.102.127:3000';
     try {
       // Query producer-log database để lấy statistics
       const response = await axios.get(
-        'http://3.107.102.127:3001:3000/api/producers/statistics',
+        `${producerServiceUrl}/api/producers/statistics`,
         {
           timeout: 5000,
         },

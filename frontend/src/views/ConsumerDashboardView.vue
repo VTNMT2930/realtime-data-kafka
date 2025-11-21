@@ -543,7 +543,7 @@ export default {
 			console.log("🔌 Initializing WebSocket connection...");
 
 			// Kết nối đến Consumer Service (Port 3001)
-			this.socket = io("http://3.107.102.127:3001", {
+			this.socket = io("http://52.65.150.130:3001", {
 				transports: ["websocket", "polling"], // Ưu tiên websocket
 				reconnection: true,
 				reconnectionDelay: 1000,

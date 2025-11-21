@@ -423,8 +423,9 @@ export default {
       this.checking = false;
     },
     async checkProducerService() {
+      const producerServiceUrl = process.env.PRODUCER_SERVICE_URL || "http://3.107.102.127:3000/api";
       try {
-        const response = await axios.get("http://3.107.102.127:3000/api", {
+        const response = await axios.get(`${producerServiceUrl}`, {
           timeout: 3000,
         });
         this.producerStatus = response.status === 200 ? "online" : "offline";
@@ -433,8 +434,9 @@ export default {
       }
     },
     async checkConsumerService() {
+      const consumerServiceUrl = process.env.CONSUMER_SERVICE_URL || "http://3.107.102.127:3001/api";
       try {
-        const response = await axios.get("http://3.107.102.127:3001/api/consumers/stats", {
+        const response = await axios.get(`${consumerServiceUrl}/consumers/stats`, {
           timeout: 3000,
         });
         this.consumerStatus = response.status === 200 ? "online" : "offline";
@@ -445,7 +447,7 @@ export default {
     async checkKafkaStatus() {
       try {
         // Check Kafka thông qua Producer Service
-        const response = await axios.get("http://3.107.102.127:3000/api/admin/topics", {
+        const response = await axios.get(`${producerServiceUrl}/admin/topics`, {
           timeout: 3000,
         });
         this.kafkaStatus = response.data.status === "success" ? "connected" : "disconnected";
