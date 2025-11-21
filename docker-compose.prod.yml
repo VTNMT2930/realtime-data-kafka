@@ -60,7 +60,7 @@ services:
       - DB_PASSWORD=admin
       - DB_DATABASE=producer_logs
       - DB_SYNC=true # Tự tạo bảng
-      - CONSUMER_SERVICE_URL=http://3.107.102.127:3001
+      - CONSUMER_SERVICE_URL=http://52.65.150.130:3001
     volumes:
       # Mount socket để điều khiển Docker
       - /var/run/docker.sock:/var/run/docker.sock
