@@ -46,7 +46,11 @@ export class ConsumerLog {
 
   // ID của consumer instance đã xử lý message này
   @Column({ type: "varchar", length: 255, nullable: true })
+
   consumerId: string;
+// Cột Group ID
+  @Column({ type: "varchar", length: 255, nullable: true })
+  groupId: string;
 
   // Dùng khi status là 'FAILED'
   @Column({ type: "text", nullable: true })

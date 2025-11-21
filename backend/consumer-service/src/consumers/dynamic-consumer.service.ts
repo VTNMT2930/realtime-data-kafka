@@ -72,7 +72,7 @@ export class DynamicConsumerService implements OnModuleInit, OnModuleDestroy {
              this.logger.debug(`[${instanceId}] Nhận tin: ${value}`);
 
              // 3. GỌI HÀM LƯU DB NGAY TẠI ĐÂY
-             await this.saveMessageToDB(instanceId, topic, partition, offset, value);
+             await this.saveMessageToDB(instanceId, groupId, topic, partition, offset, value);
           },
         });
 
@@ -94,7 +94,7 @@ export class DynamicConsumerService implements OnModuleInit, OnModuleDestroy {
   }
 
   // --- HÀM MỚI: LƯU MESSAGE VÀO DB ---
-  private async saveMessageToDB(consumerId: string, topic: string, partition: number, offset: string, value: string) {
+  private async saveMessageToDB(consumerId: string, groupId: string, topic: string, partition: number, offset: string, value: string) {
     try {
       // Thử parse JSON để lấy ID gốc nếu có (cho đẹp data), không thì random
       let originalLogId = `unknown-${Date.now()}`;
@@ -108,6 +108,7 @@ export class DynamicConsumerService implements OnModuleInit, OnModuleDestroy {
       // Tạo Entity theo đúng cấu trúc bạn đã gửi trong consumer-log.entity.ts
       const log = this.logRepo.create({
         consumerId: consumerId,
+        groupId: groupId,
         originalLogId: originalLogId, // Field này bắt buộc trong entity của bạn
         topic: topic,
         partition: partition,
