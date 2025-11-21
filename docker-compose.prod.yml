@@ -98,6 +98,14 @@ services:
     depends_on:
       - consumer-service
 
+  # --- THÊM SERVICE REDIS ---
+  redis:
+    image: redis:alpine
+    container_name: redis-prod
+    restart: always
+    ports:
+      - "6379:6379" # Mở port nếu cần debug từ ngoài, không thì bỏ cũng được
+
   # 6. FRONTEND
   frontend:
     build: ./frontend
