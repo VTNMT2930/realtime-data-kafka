@@ -5,19 +5,25 @@ import {
   Inject,
   OnModuleInit,
   OnModuleDestroy,
+  Logger,
 } from '@nestjs/common';
 import { ClientKafka } from '@nestjs/microservices';
 import { Admin } from 'kafkajs'; // Import 'Admin' từ kafkajs
-import { spawn } from 'child_process';
-import * as path from 'path';
+import { exec } from 'child_process'; // Dùng exec thay vì spawn
+import { promisify } from 'util';
 import axios from 'axios';
 import { io, Socket } from 'socket.io-client';
-
+import { CreateConsumerDto } from './dto/create-consumer.dto';
+// Chuyển exec sang Promise để dùng await
+const execAsync = promisify(exec);
 @Injectable()
 export class AdminService implements OnModuleInit, OnModuleDestroy {
+  private readonly logger = new Logger(AdminService.name);
   private kafkaAdmin: Admin; // Biến để giữ admin client
-  private runningConsumers: Map<string, any> = new Map(); // Track running consumer processes
   private consumerServiceSocket: Socket; // WebSocket connection to Consumer Service
+  // Cấu hình đường dẫn file Docker (được mount từ volume)
+  private readonly DOCKER_COMPOSE_FILE = 'docker-compose.prod.yml';
+  private readonly CONSUMER_SERVICE_NAME = 'consumer-service';
 
   constructor(
     @Inject('KAFKA_SERVICE') private readonly kafkaClient: ClientKafka,
@@ -88,6 +94,9 @@ export class AdminService implements OnModuleInit, OnModuleDestroy {
     }
   }
 
+  // ==================================================================
+  // PHẦN 1: TOPIC MANAGEMENT
+  // ==================================================================
   //Hàm tạo topic mới
   async createTopic(
     topicName: string,
@@ -168,15 +177,18 @@ export class AdminService implements OnModuleInit, OnModuleDestroy {
       return { status: 'error', message: 'Không thể lấy danh sách topic.' };
     }
   }
-
+// ==================================================================
+  // PHẦN 2: STATISTICS
+  // ==================================================================
   // ✅ Helper: Lấy producer statistics theo topic
   private async getProducerStatsByTopic(): Promise<
     Record<string, { totalRecords: number; batches: number }>
   > {
+    const producerServiceUrl = process.env.PRODUCER_SERVICE_URL || 'http://3.107.102.127:3000';
     try {
       // Query producer-log database để lấy statistics
       const response = await axios.get(
-        'http://3.107.102.127:3000/api/producers/statistics',
+        `${producerServiceUrl}/api/producers/statistics`,
         {
           timeout: 5000,
         },
@@ -211,7 +223,7 @@ export class AdminService implements OnModuleInit, OnModuleDestroy {
     try {
       // Query consumer instances từ Consumer Service
       const consumerServiceUrl =
-        process.env.CONSUMER_SERVICE_URL || 'http://3.107.102.127:3001';
+        process.env.CONSUMER_SERVICE_URL || 'http://:3001';
       const response = await axios.get(
         `${consumerServiceUrl}/api/consumers/instances`,
         {
@@ -392,398 +404,143 @@ export class AdminService implements OnModuleInit, OnModuleDestroy {
     }
   }
 
-  // Spawn một consumer instance mới
-  async spawnConsumer(
-    consumerId?: string,
-    groupId?: string,
-    topicName?: string,
-  ) {
+  /// ==================================================================
+  // PHẦN 3: CONSUMER MANAGEMENT 
+  // ==================================================================
+
+  /**
+   * Helper: Đếm số lượng container đang chạy
+   */
+  private async getDockerConsumerCount(): Promise<number> {
     try {
-      // Auto-generate consumer ID với format đẹp và unique
-      let finalConsumerId: string;
-      let consumerPort: number = 3001; // Khởi tạo mặc định
-
-      if (consumerId && consumerId.trim()) {
-        // Nếu user cung cấp ID, đảm bảo có prefix "consumer-"
-        finalConsumerId = consumerId.startsWith('consumer-')
-          ? consumerId
-          : `consumer-${consumerId}`;
-
-        // Tính port dựa trên consumer ID
-        const idNumber = finalConsumerId.replace('consumer-', '');
-        const num = parseInt(idNumber);
-        consumerPort = isNaN(num)
-          ? 3001 + Math.floor(Math.random() * 100)
-          : 3001 + num;
-      } else {
-        // Auto-generate: consumer-1, consumer-2, consumer-3...
-        try {
-          // Query tất cả consumers từ database để tránh trùng ID
-          // Force IPv4
-          const consumerServiceUrl =
-            process.env.CONSUMER_SERVICE_URL || 'http://3.107.102.127:3001';
-          const response = await axios.get(
-            `${consumerServiceUrl}/api/consumers/stats`,
-            {
-              timeout: 5000,
-            },
-          );
-
-          const existingIds = response.data.instances?.map((i) => i.id) || [];
-          const consumerNumbers = existingIds
-            .filter((id) => id.match(/^consumer-\d+$/))
-            .map((id) => parseInt(id.replace('consumer-', '')))
-            .filter((num) => !isNaN(num));
-
-          const nextNumber =
-            consumerNumbers.length > 0 ? Math.max(...consumerNumbers) + 1 : 1;
-
-          finalConsumerId = `consumer-${nextNumber}`;
-          // Mỗi consumer có port riêng: 3001 + nextNumber
-          consumerPort = 3001 + nextNumber;
-        } catch (error) {
-          // Fallback: Dùng timestamp nếu không query được DB
-          console.warn(
-            '[Admin] Cannot query consumers from DB, using timestamp',
-          );
-          const timestamp = Date.now();
-          finalConsumerId = `consumer-${timestamp}`;
-          consumerPort = 3001 + (timestamp % 1000); // Port ngẫu nhiên
-        }
-      }
-
-      // Kiểm tra xem consumer đã chạy chưa - ALWAYS check Consumer Service DB for authoritative state
-      try {
-        const consumerServiceUrl =
-          process.env.CONSUMER_SERVICE_URL || 'http://3.107.102.127:3001';
-        const response = await axios.get(
-          `${consumerServiceUrl}/api/consumers/stats`,
-          {
-            timeout: 5000,
-          },
-        );
-
-        if (response.data.success) {
-          const existingConsumer = response.data.instances?.find(
-            (instance) =>
-              instance.id === finalConsumerId && instance.status === 'ACTIVE',
-          );
-
-          if (existingConsumer) {
-            console.log(
-              `[Admin] Consumer ${finalConsumerId} already exists and is ACTIVE in database`,
-            );
-            return {
-              status: 'error',
-              message: `Consumer ${finalConsumerId} đã đang chạy (PID: ${existingConsumer.pid})`,
-            };
-          } else {
-            console.log(
-              `[Admin] Consumer ${finalConsumerId} not found or inactive in database - safe to create`,
-            );
-            // Clean up local cache if it exists but DB says consumer is not active
-            if (this.runningConsumers.has(finalConsumerId)) {
-              console.log(
-                `[Admin] Removing stale local cache entry for ${finalConsumerId}`,
-              );
-              this.runningConsumers.delete(finalConsumerId);
-            }
-          }
-        }
-      } catch (error) {
-        console.warn(
-          `[Admin] Cannot verify consumer status from DB: ${error.message}`,
-        );
-        // Fallback to local cache check only if we can't reach Consumer Service
-        if (this.runningConsumers.has(finalConsumerId)) {
-          return {
-            status: 'error',
-            message: `Consumer ${finalConsumerId} đã đang chạy (không thể xác minh từ database)`,
-          };
-        }
-      }
-
-      // Đường dẫn đến consumer service
-      const consumerPath = path.resolve(__dirname, '../../../consumer-service');
-
-      console.log(
-        `[Admin] Spawning consumer: ${finalConsumerId} on port ${consumerPort}`,
-      );
-      console.log(`[Admin] Consumer path: ${consumerPath}`);
-
-      // Spawn consumer process với PORT riêng
-      const consumerProcess = spawn('npm', ['run', 'start:dev'], {
-        cwd: consumerPath,
-        env: {
-          ...process.env,
-          CONSUMER_ID: finalConsumerId,
-          PORT: consumerPort.toString(),
-          KAFKA_GROUP_ID: groupId || 'platform-consumer-group-server',
-          KAFKA_TOPIC_NAME: topicName || '', // ✅ Truyền topic name
-        },
-        shell: true,
-        detached: false, // ← CHANGED: Không detach để có thể log
-        stdio: 'pipe', // ← ADDED: Pipe stdio để capture logs
-      });
-
-      // Track process
-      this.runningConsumers.set(finalConsumerId, {
-        pid: consumerProcess.pid,
-        consumerId: finalConsumerId,
-        port: consumerPort,
-        groupId: groupId || 'platform-consumer-group-server',
-        startedAt: new Date(),
-      });
-
-      // Log output
-      consumerProcess.stdout?.on('data', (data) => {
-        console.log(`[Consumer ${finalConsumerId}] ${data.toString()}`);
-      });
-
-      consumerProcess.stderr?.on('data', (data) => {
-        console.error(`[Consumer ${finalConsumerId} ERROR] ${data.toString()}`);
-      });
-
-      consumerProcess.on('exit', (code) => {
-        console.log(`[Consumer ${finalConsumerId}] Exited with code ${code}`);
-        this.runningConsumers.delete(finalConsumerId);
-      });
-
-      // Unref để không block main process
-      consumerProcess.unref();
-
-      // Broadcast ngay lập tức để UI biết consumer đang được tạo
-      this.broadcastToConsumerService('consumer-creating', {
-        consumerId: finalConsumerId,
-        pid: consumerProcess.pid,
-        port: consumerPort,
-        groupId: groupId || 'platform-consumer-group-server',
-      });
-
-      // Đợi consumer register vào database rồi mới broadcast created
-      setTimeout(() => {
-        this.broadcastToConsumerService('consumer-created', {
-          consumerId: finalConsumerId,
-          pid: consumerProcess.pid,
-          port: consumerPort,
-          groupId: groupId || 'platform-consumer-group-server',
-        });
-      }, 3000); // Tăng lên 3 giây để đảm bảo consumer đã register
-
-      return {
-        status: 'success',
-        message: `Consumer ${finalConsumerId} đã được khởi động trên port ${consumerPort}`,
-        data: {
-          consumerId: finalConsumerId,
-          pid: consumerProcess.pid,
-          port: consumerPort,
-          groupId: groupId || 'platform-consumer-group-server',
-        },
-      };
+      // Lệnh đếm số dòng ID container của service
+      const command = `docker compose -f ${this.DOCKER_COMPOSE_FILE} ps -q ${this.CONSUMER_SERVICE_NAME} | wc -l`;
+      const { stdout } = await execAsync(command);
+      const count = parseInt(stdout.trim(), 10);
+      return isNaN(count) ? 0 : count;
     } catch (error) {
-      console.error('[Admin] Lỗi khi spawn consumer:', error);
-      return {
-        status: 'error',
-        message: 'Không thể khởi động consumer',
-        error: error.message,
-      };
+      this.logger.error('Lỗi đếm docker process:', error);
+      return 0;
     }
   }
 
-  // Lấy danh sách consumers đang chạy từ Consumer Service API
-  async getRunningConsumers() {
+  /**
+   * Helper: Chạy lệnh Scale
+   */
+  private async scaleDockerService(count: number): Promise<void> {
     try {
-      // Query từ Consumer Service API thay vì dùng local Map
-      // Force IPv4 để tránh lỗi ECONNREFUSED với ::1
-      const consumerServiceUrl =
-        process.env.CONSUMER_SERVICE_URL || 'http://3.107.102.127:3001';
+      // Lệnh scale: up -d --scale service=X --no-recreate
+      const command = `docker compose -f ${this.DOCKER_COMPOSE_FILE} up -d --scale ${this.CONSUMER_SERVICE_NAME}=${count} --no-recreate`;
+      this.logger.log(`Thực thi: ${command}`);
+      await execAsync(command);
+    } catch (error) {
+      this.logger.error(`Lỗi scale service lên ${count}:`, error);
+      throw error;
+    }
+  }
 
-      const response = await axios.get(
-        `${consumerServiceUrl}/api/consumers/stats`,
-        {
-          timeout: 5000, // 5 second timeout
-        },
-      );
+  // /**
+  //  * 1. CREATE CONSUMER -> Thay thế logic SPAWN cũ bằng SCALE UP
+  //  */
+  // async createConsumer(createConsumerDto: CreateConsumerDto) {
+  //   try {
+  //     this.logger.log(`Scale Up yêu cầu từ topic: ${createConsumerDto.topicName}`);
 
-      if (response.data.success) {
-        // Transform data từ consumer stats sang format mong đợi
-        const instances = response.data.instances || [];
+  //     // Lấy số lượng hiện tại + 1
+  //     const currentCount = await this.getDockerConsumerCount();
+  //     const newCount = currentCount + 1;
 
+  //     // Thực hiện Scale
+  //     await this.scaleDockerService(newCount);
+
+  //     // Gửi socket thông báo (Optional)
+  //     if (this.consumerServiceSocket) {
+  //         this.consumerServiceSocket.emit('consumer-creating', {
+  //           message: 'Docker scaling up...',
+  //           targetCount: newCount
+  //         });
+  //     }
+
+  //     return {
+  //       status: 'success',
+  //       message: `Đang khởi tạo instance thứ ${newCount}. Vui lòng đợi vài giây.`,
+  //       data: {
+  //           topic: createConsumerDto.topicName,
+  //           groupId: createConsumerDto.groupId
+  //       }
+  //     };
+  //   } catch (error) {
+  //     this.logger.error('Lỗi Scale Up:', error);
+  //     return { status: 'error', message: error.message };
+  //   }
+  // }
+
+    // admin.service.ts
+  async createAdvancedConsumer(groupId: string, topics: string[], count: number) {
+    // Gọi sang Consumer Service
+    const consumerServiceUrl = process.env.CONSUMER_SERVICE_URL || 'http://consumer-service:3001';
+    const response = await axios.post(`${consumerServiceUrl}/api/consumers/dynamic/advanced`, {
+        groupId,
+        topics,
+        count
+    });
+    return response.data;
+  }
+
+  /**
+   * 2. STOP CONSUMER -> Thay thế logic cũ bằng SCALE DOWN
+   */
+  async stopConsumer(consumerId: string) {
+    try {
+      this.logger.log(`Scale Down yêu cầu (Stop)`);
+
+      const currentCount = await this.getDockerConsumerCount();
+      
+      if (currentCount <= 1) {
         return {
-          status: 'success',
-          data: instances.map((instance) => ({
-            consumerId: instance.id,
-            pid: instance.pid,
-            groupId: 'platform-consumer-group-server', // Default
-            startedAt: instance.lastHeartbeat,
-            status: instance.status.toLowerCase(), // Convert ACTIVE → active
-            hostname: instance.hostname,
-            port: instance.port,
-            topicName: instance.topicName || null, // ✅ Thêm topicName từ database
-          })),
+            status: 'warning',
+            message: 'Đây là instance cuối cùng. Vui lòng dùng Delete nếu muốn xóa sạch.',
         };
       }
 
+      const newCount = currentCount - 1;
+      await this.scaleDockerService(newCount);
+
       return {
         status: 'success',
-        data: [],
+        message: `Đã giảm số lượng instance xuống còn ${newCount}`,
       };
     } catch (error) {
-      console.error('[Admin] Error fetching consumers:', error.message);
-      // Fallback to local Map nếu không connect được
-      return {
-        status: 'success',
-        data: Array.from(this.runningConsumers.values()),
-      };
+      this.logger.error('Lỗi Scale Down:', error);
+      return { status: 'error', message: error.message };
     }
   }
 
-  // Stop một consumer
-  // Stop consumer (kill process nhưng giữ lại record trong DB với status INACTIVE)
-  async stopConsumer(consumerId: string) {
+  /**
+   * 3. DELETE CONSUMER -> Giữ nguyên logic gọi API sang Consumer Service
+   */
+  async deleteConsumer(consumerId: string) {
     try {
-      console.log(`[Admin] Attempting to stop consumer: ${consumerId}`);
-
-      // Kiểm tra trong local Map trước
-      const consumer = this.runningConsumers.get(consumerId);
-
-      if (consumer) {
-        console.log(
-          `[Admin] Found consumer in local map with PID: ${consumer.pid}`,
-        );
-
-        try {
-          // Kill process - Consumer Service sẽ tự động mark INACTIVE sau khi không còn heartbeat
-          process.kill(consumer.pid, 'SIGTERM');
-          console.log(`[Admin] Sent SIGTERM to PID: ${consumer.pid}`);
-
-          // Xóa khỏi local Map nhưng GIỮ LẠI trong database
-          this.runningConsumers.delete(consumerId);
-
-          // ✅ KHÔNG broadcast ngay - để Consumer Service tự broadcast sau khi cập nhật DB
-          // Consumer Service sẽ tự động detect process đã bị kill và broadcast 'consumer-stopped' event
-
-          return {
-            status: 'success',
-            message: `Consumer ${consumerId} đã được dừng (PID: ${consumer.pid})`,
-          };
-        } catch (killError) {
-          console.error(
-            `[Admin] Error killing process ${consumer.pid}:`,
-            killError.message,
-          );
-
-          // Nếu kill thất bại, có thể process đã chết rồi
-          this.runningConsumers.delete(consumerId);
-
-          return {
-            status: 'warn',
-            message: `Consumer ${consumerId} có thể đã dừng trước đó. Đã xóa khỏi danh sách.`,
-          };
-        }
-      }
-
-      // Nếu không có trong local Map, query từ Consumer Service
-      console.log(
-        `[Admin] Consumer not found in local map, checking Consumer Service...`,
-      );
-
+      // Dùng tên service trong Docker network
       const consumerServiceUrl =
-        process.env.CONSUMER_SERVICE_URL || 'http://3.107.102.127:3001';
+        process.env.CONSUMER_SERVICE_URL || 'http://consumer-service:3001';
 
-      const response = await axios.get(
-        `${consumerServiceUrl}/api/consumers/stats`,
+      const response = await axios.delete(
+        `${consumerServiceUrl}/api/consumers/instances/${consumerId}`,
         { timeout: 5000 },
       );
 
-      const remoteConsumer = response.data.instances?.find(
-        (i) => i.id === consumerId,
-      );
-
-      if (remoteConsumer && remoteConsumer.pid) {
-        console.log(
-          `[Admin] Found consumer in remote with PID: ${remoteConsumer.pid}`,
-        );
-
-        try {
-          process.kill(remoteConsumer.pid, 'SIGTERM');
-          console.log(
-            `[Admin] Sent SIGTERM to remote PID: ${remoteConsumer.pid}`,
-          );
-
-          // ✅ KHÔNG broadcast ngay - để Consumer Service tự broadcast sau khi cập nhật DB
-          // Consumer Service sẽ tự động detect process đã bị kill và broadcast 'consumer-stopped' event
-
-          return {
-            status: 'success',
-            message: `Consumer ${consumerId} đã được dừng (PID: ${remoteConsumer.pid})`,
-          };
-        } catch (killError) {
-          console.error(
-            `[Admin] Error killing remote process:`,
-            killError.message,
-          );
-
-          return {
-            status: 'error',
-            message: `Không thể kill process của consumer ${consumerId}. Process có thể đã dừng hoặc không có quyền.`,
-          };
-        }
-      }
-
-      return {
-        status: 'error',
-        message: `Consumer ${consumerId} không tồn tại hoặc không chạy`,
-      };
-    } catch (error) {
-      console.error('[Admin] Lỗi khi stop consumer:', error);
-      return {
-        status: 'error',
-        message: 'Không thể dừng consumer',
-        error: error.message,
-      };
-    }
-  }
-
-  // Delete consumer (xóa hoàn toàn khỏi database)
-  async deleteConsumer(consumerId: string) {
-    try {
-      const consumerServiceUrl =
-        process.env.CONSUMER_SERVICE_URL || 'http://3.107.102.127:3001';
-
-      // Gọi API của Consumer Service để xóa khỏi database
-      const response = await axios.delete(
-        `${consumerServiceUrl}/api/consumers/instances/${consumerId}`,
-        {
-          timeout: 5000,
-        },
-      );
-
       if (response.data.success) {
-        // Broadcast consumer deleted event để UI tự động cập nhật
-        setTimeout(() => {
-          this.broadcastToConsumerService('consumer-deleted', {
-            consumerId: consumerId,
-          });
-        }, 500);
-
-        return {
-          status: 'success',
-          message: `Consumer ${consumerId} đã được xóa hoàn toàn`,
-        };
+         // Logic gửi socket cũ của bạn
+         if (this.consumerServiceSocket) {
+            this.consumerServiceSocket.emit('consumer-deleted', { consumerId });
+         }
+         return { status: 'success', message: `Đã xóa ${consumerId} khỏi DB` };
       }
-
-      return {
-        status: 'error',
-        message: response.data.message || 'Không thể xóa consumer',
-      };
+      return { status: 'error', message: 'Lỗi từ Consumer Service' };
     } catch (error) {
-      console.error('[Admin] Lỗi khi delete consumer:', error);
-      return {
-        status: 'error',
-        message: 'Không thể xóa consumer',
-        error: error.message,
-      };
+      this.logger.error('Lỗi Delete Consumer:', error);
+      return { status: 'error', message: error.message };
     }
   }
 }

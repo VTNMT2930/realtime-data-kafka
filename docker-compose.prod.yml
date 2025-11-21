@@ -61,6 +61,7 @@ services:
       - DB_DATABASE=producer_logs
       - DB_SYNC=true # Tự tạo bảng
       - CONSUMER_SERVICE_URL=http://52.65.150.130:3001
+      - PRODUCER_SERVICE_URL=http://52.65.150.130:3000
     volumes:
       # Mount socket để điều khiển Docker
       - /var/run/docker.sock:/var/run/docker.sock

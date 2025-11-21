@@ -7,6 +7,7 @@ import {
   Delete,
   Put,
   Post,
+  Body,
 } from "@nestjs/common";
 import {
   MessagePattern,
@@ -15,10 +16,11 @@ import {
   KafkaContext,
 } from "@nestjs/microservices";
 import { ConsumersService } from "./consumers.service";
+import { DynamicConsumerService } from "./dynamic-consumer.service";
 
 @Controller("consumers")
 export class ConsumersController {
-  constructor(private readonly consumersService: ConsumersService) {}
+  constructor(private readonly consumersService: ConsumersService, private readonly dynamicService: DynamicConsumerService) {}
 
   /**
    * ❌ ĐÃ TẮT: Không lắng nghe tất cả topics nữa
@@ -107,5 +109,10 @@ export class ConsumersController {
   @Delete("instances/:consumerId")
   async deleteConsumerInstance(@Param("consumerId") consumerId: string) {
     return this.consumersService.deleteConsumerInstance(consumerId);
+  }
+
+  @Post('dynamic/advanced')
+  async createAdvancedConsumer(@Body() body: { groupId: string, topics: string[], count: number }) {
+    return this.dynamicService.createAdvancedConsumer(body.groupId, body.topics, body.count);
   }
 }

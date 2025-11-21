@@ -423,8 +423,11 @@ export default {
       this.checking = false;
     },
     async checkProducerService() {
+      const producerServiceUrl = import.meta.env.VITE_PRODUCER_API_URL || "http://3.107.102.127:3000/api";
       try {
+
         const response = await axios.get("http://52.65.150.130:3000/api", {
+
           timeout: 3000,
         });
         this.producerStatus = response.status === 200 ? "online" : "offline";
@@ -433,8 +436,10 @@ export default {
       }
     },
     async checkConsumerService() {
+      const consumerServiceUrl = import.meta.env.VITE_CONSUMER_API_URL || "http://3.107.102.127:3001/api";
       try {
         const response = await axios.get("http://52.65.150.130:3001/api/consumers/stats", {
+
           timeout: 3000,
         });
         this.consumerStatus = response.status === 200 ? "online" : "offline";
@@ -446,6 +451,7 @@ export default {
       try {
         // Check Kafka thông qua Producer Service
         const response = await axios.get("http://52.65.150.130:3000/api/admin/topics", {
+
           timeout: 3000,
         });
         this.kafkaStatus = response.data.status === "success" ? "connected" : "disconnected";
