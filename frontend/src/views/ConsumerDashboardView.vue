@@ -698,7 +698,7 @@ export default {
           if (statsResponse.success) {
             const foundConsumer = statsResponse.instances?.find(
               (instance) =>
-                instance.id === consumerId && instance.status === "ACTIVE"
+                instance.id === consumerId && instance.status === "active"
             );
 
             if (foundConsumer) {
@@ -757,7 +757,7 @@ export default {
             );
 
             // Check nếu consumer đã thành INACTIVE hoặc không tồn tại (đã bị xóa)
-            if (!foundConsumer || foundConsumer.status === "INACTIVE") {
+            if (!foundConsumer || foundConsumer.status === "inactive") {
               console.log(
                 `✅ Consumer ${consumerId} stopped successfully in database!`
               );

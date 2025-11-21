@@ -54,7 +54,7 @@ export class DynamicConsumerService implements OnModuleInit, OnModuleDestroy {
 
       if (this.activeConsumers.has(instanceId)) {
         this.logger.warn(`Instance ${instanceId} đã chạy, update DB.`);
-        await this.saveInstanceToDB(instanceId, groupId, topics, 'ACTIVE');
+        await this.saveInstanceToDB(instanceId, groupId, topics, 'active');
         continue;
       }
 
@@ -77,7 +77,7 @@ export class DynamicConsumerService implements OnModuleInit, OnModuleDestroy {
         });
 
         this.activeConsumers.set(instanceId, consumer);
-        await this.saveInstanceToDB(instanceId, groupId, topics, 'ACTIVE');
+        await this.saveInstanceToDB(instanceId, groupId, topics, 'active');
         results.push(instanceId as never);
         
       } catch (error) {

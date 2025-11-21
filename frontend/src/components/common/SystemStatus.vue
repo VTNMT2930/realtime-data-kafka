@@ -436,7 +436,6 @@ export default {
       }
     },
     async checkConsumerService() {
-      const consumerServiceUrl = import.meta.env.VITE_CONSUMER_API_URL || "http://3.107.102.127:3001/api";
       try {
         const response = await axios.get("http://52.65.150.130:3001/api/consumers/stats", {
 
