@@ -67,7 +67,7 @@
 <script>
 import axios from 'axios';
 // URL API Backend của bạn
-const API_URL = import.meta.env.VITE_PRODUCER_API_URL || "http://3.107.102.127:3000/api"; 
+const API_URL = "http://52.65.150.130:3000/api"; 
 
 export default {
   props: ['isOpen'],
