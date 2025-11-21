@@ -251,23 +251,18 @@ export const getConsumerStats = (topic = null) => {
 // ============================================
 
 /**
- * Tạo consumer mới
- * Backend: POST /api/admin/consumers
- * @param {string} consumerId - Consumer ID (optional, auto-generate nếu không truyền)
- * @param {string} groupId - Kafka consumer group ID (optional)
- * @param {string} topicName - Topic name to subscribe (optional)
+ * Tạo Consumer Nâng Cao (Group, Scale, Multi-topics)
+ * @param {string} groupId
+ * @param {string[]} topics - Mảng các topic
+ * @param {number} count - Số lượng instance
  */
-export const createConsumer = (
-  consumerId = null,
-  groupId = null,
-  topicName = null
-) => {
-  return callApi("admin/consumers", {
+export const createAdvancedConsumer = (groupId, topics, count) => {
+  return callApi("admin/consumers/advanced", {
     method: "POST",
     body: JSON.stringify({
-      consumerId,
       groupId,
-      topicName,
+      topics,
+      count: parseInt(count),
     }),
   });
 };

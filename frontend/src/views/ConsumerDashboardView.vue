@@ -1044,12 +1044,34 @@ export default {
 			});
 		},
 		handleConsumerCreated(data) {
-			console.log("Consumer created:", data);
-			// Ngay lập tức thêm consumer vào local state với trạng thái creating
-			this.addTemporaryConsumer(data.consumerId, "creating");
+			// Hiển thị thông báo ngay lập tức
+			this.showToast(
+				"success",
+				`Đang khởi tạo ${data.count || 1} consumers cho Group "${data.groupId || '...'}"`
+			);
+			
+			// Đóng modal
+			this.showAddModal = false;
 
-			// Không cần setTimeout ở đây vì WebSocket sẽ handle việc refresh
-			// WebSocket event 'consumer-status-changed' sẽ được trigger sau khi consumer register vào DB
+			// --- CƠ CHẾ POLLING (TỰ ĐỘNG REFRESH) ---
+			// Docker mất khoảng 5-10s để container start và ghi vào DB
+			// Chúng ta sẽ fetch lại dữ liệu 5 lần, mỗi lần cách nhau 2 giây
+			let attempts = 0;
+			const maxAttempts = 6;
+			
+			// Fetch ngay lập tức lần 1
+			this.fetchConsumerData();
+
+			const intervalId = setInterval(() => {
+				attempts++;
+				console.log(`Auto-refreshing consumers list (Attempt ${attempts}/${maxAttempts})...`);
+				this.fetchConsumerData();
+
+				if (attempts >= maxAttempts) {
+					clearInterval(intervalId);
+					this.showToast("info", "Hoàn tất quá trình khởi tạo. Kiểm tra danh sách.");
+				}
+			}, 2500); // 2.5 giây refresh 1 lần
 		},
 
 		handleStartStopPolling(consumerId) {
