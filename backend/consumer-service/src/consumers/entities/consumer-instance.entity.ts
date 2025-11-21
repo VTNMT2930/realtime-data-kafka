@@ -1,53 +1,28 @@
-// consumer-service/src/consumers/consumer-instance.entity.ts
-import {
-	Entity,
-	Column,
-	PrimaryColumn,
-	CreateDateColumn,
-	UpdateDateColumn,
-} from "typeorm";
+import { Entity, Column, PrimaryColumn, CreateDateColumn, UpdateDateColumn } from 'typeorm';
 
-export enum ConsumerInstanceStatus {
-	ACTIVE = "ACTIVE",
-	INACTIVE = "INACTIVE",
-}
-
-@Entity("consumer_instances")
+@Entity('consumer_instances')
 export class ConsumerInstance {
-	@PrimaryColumn({ type: "varchar", length: 255 })
-	id: string; // consumer-1, consumer-2, etc.
+  // ID sẽ là dạng: "groupId-inst-0", "groupId-inst-1"
+  @PrimaryColumn()
+  consumerId: string;
 
-	@Column({
-		type: "enum",
-		enum: ConsumerInstanceStatus,
-		default: ConsumerInstanceStatus.ACTIVE,
-	})
-	status: ConsumerInstanceStatus;
+  @Column()
+  groupId: string;
 
-	@Column({ type: "varchar", length: 50, nullable: true })
-	hostname: string;
+  // Lưu danh sách topic dưới dạng chuỗi, ví dụ: "topic-a,topic-b"
+  @Column({ type: 'text', nullable: true })
+  topics: string;
 
-	@Column({ type: "int", nullable: true })
-	port: number;
+  @Column({ default: 'active' }) // active | inactive
+  status: string;
 
-	@Column({ type: "int", nullable: true })
-	pid: number; // Process ID
+  // PID của process (nếu dùng spawn process cũ), với dynamic thì để null hoặc 0
+  @Column({ nullable: true })
+  pid: number;
 
-	@Column({ type: "varchar", length: 255, nullable: true })
-	topicName?: string; // Kafka topic name that consumer subscribes to
+  @CreateDateColumn()
+  createdAt: Date;
 
-	@Column({ type: "timestamp", default: () => "CURRENT_TIMESTAMP" })
-	lastHeartbeat: Date;
-
-	@Column({ type: "boolean", default: false })
-	shouldStop: boolean; // Signal để báo cho consumer instance tự stop
-
-	@Column({ type: "boolean", default: false })
-	isDeleted: boolean; // Flag để đánh dấu consumer đã bị xóa (soft delete)
-
-	@CreateDateColumn()
-	createdAt: Date;
-
-	@UpdateDateColumn()
-	updatedAt: Date;
+  @UpdateDateColumn()
+  updatedAt: Date;
 }
