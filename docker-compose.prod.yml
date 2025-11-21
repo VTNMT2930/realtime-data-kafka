@@ -100,14 +100,16 @@ services:
 
   # 6. FRONTEND
   frontend:
-    build: ./frontend
+    build:
+      context: ./frontend
+      args:
+        # Truyền biến vào quá trình build
+        - VITE_PRODUCER_URL=http://52.65.150.130:3000/api
+        - VITE_CONSUMER_URL=http://52.65.150.130:3001/api
     container_name: frontend-prod
     restart: always
     ports:
       - "80:80"
-    environment:
-      - PRODUCER_SERVICE_URL=http://52.65.150.130:3000/api
-      - CONSUMER_SERVICE_URL=http://52.65.150.130:3001/api
     depends_on:
       - api-producer
 

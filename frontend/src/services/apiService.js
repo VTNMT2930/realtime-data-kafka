@@ -1,6 +1,6 @@
 // Backend NestJS chạy ở 2 ports khác nhau
-const PRODUCER_API_BASE_URL = process.env.PRODUCER_SERVICE_URL || "http://3.107.102.127:3000/api";
-const CONSUMER_API_BASE_URL = process.env.CONSUMER_SERVICE_URL || "http://3.107.102.127:3001/api";
+const PRODUCER_API_BASE_URL = import.meta.env.VITE_PRODUCER_API_URL || "";
+const CONSUMER_API_BASE_URL = import.meta.env.VITE_CONSUMER_API_URL || "";
 
 /**
  * Hàm gọi API chung (dùng fetch)
