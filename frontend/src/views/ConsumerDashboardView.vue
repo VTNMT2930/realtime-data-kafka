@@ -54,7 +54,7 @@ import SystemStatus from "@/components/common/SystemStatus.vue";
 import AddConsumerModal from "@/components/common/AddConsumerModal.vue";
 import ToastContainer from "@/components/common/ToastContainer.vue";
 import { useToast } from "@/composables/useToast";
-import { getConsumerStats, stopConsumer, resumeConsumer, deleteConsumer } from "@/services/apiService";
+import { getRunningConsumers, stopConsumer, resumeConsumer, deleteConsumer } from "@/services/apiService";
 
 export default {
   name: "ConsumerDashboardView",
@@ -101,7 +101,7 @@ export default {
     async fetchConsumerData() {
       this.loading = true;
       try {
-        const data = await getConsumerStats();
+        const data = await getRunningConsumers();
         // Sort: Active lên đầu
         this.consumerInstances = (data || []).sort((a, b) => {
           if (a.status === 'active' || a.status === 'ACTIVE') return -1;
