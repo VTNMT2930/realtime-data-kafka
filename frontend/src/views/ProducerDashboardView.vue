@@ -600,7 +600,7 @@ export default {
       console.log("🔌 [Producer] Initializing WebSocket connection...");
 
       // Kết nối đến Producer Service (Port 3000)
-      this.socket = io("http://localhost:3000", {
+      this.socket = io("http://52.65.150.130:3000", {
         transports: ["websocket", "polling"],
         reconnection: true,
         reconnectionDelay: 1000,
@@ -746,7 +746,7 @@ export default {
 
     async getProducerLogById(logId) {
       try {
-        const response = await fetch(`http://localhost:3000/api/producers/logs/${logId}`);
+        const response = await fetch(`http://52.65.150.130:3000/api/producers/logs/${logId}`);
         const data = await response.json();
         
         if (data.success && data.data) {
