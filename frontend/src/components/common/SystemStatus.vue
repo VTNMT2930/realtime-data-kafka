@@ -423,9 +423,7 @@ export default {
       this.checking = false;
     },
     async checkProducerService() {
-      const producerServiceUrl = import.meta.env.VITE_PRODUCER_API_URL || "http://3.107.102.127:3000/api";
       try {
-
         const response = await axios.get("http://3.27.218.52:3000/api", {
 
           timeout: 3000,
