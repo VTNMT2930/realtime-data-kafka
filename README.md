@@ -178,7 +178,3 @@ docker-compose logs -f consumer-service
 ## License
 
 Xem file `LICENSE` (nếu có) hoặc thêm license phù hợp cho dự án.
-
----
-
-Nếu bạn muốn tôi thêm phần hướng dẫn cài đặt chi tiết cho từng module (ví dụ: ví dụ biến môi trường cụ thể, command line cho Kafka local), cho biết module nào tôi sẽ bổ sung ngay.
