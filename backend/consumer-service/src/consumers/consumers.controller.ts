@@ -92,8 +92,11 @@ export class ConsumersController {
 
 	// ✅ API để lấy danh sách tất cả consumer instances
 	@Get("instances")
-	async getConsumerInstances(@Query("status") status?: string) {
-		return this.consumersService.getConsumerInstances(status);
+	async getConsumerInstances(
+		@Query("status") status?: string,
+		@Query("topic") topic?: string // Thêm dòng này
+	) {
+		return this.consumersService.getConsumerInstances(status, topic);
 	}
 
 	// ✅ API để resume consumer instance (chuyển từ INACTIVE sang ACTIVE)

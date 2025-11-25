@@ -94,6 +94,31 @@ export class AdminService implements OnModuleInit, OnModuleDestroy {
     }
   }
 
+  private async getActiveConsumersCount(topicName: string): Promise<number> {
+    try {
+      const consumerServiceUrl =
+        process.env.CONSUMER_SERVICE_URL || 'http://consumer-service:3001';
+      // Gọi API vừa sửa ở Bước 1
+      const response = await axios.get(
+        `${consumerServiceUrl}/api/consumers/instances`,
+        {
+          params: {
+            topic: topicName,
+            status: 'ACTIVE', // Chỉ đếm những thằng đang chạy
+          },
+          timeout: 3000,
+        },
+      );
+
+      return response.data ? response.data.length : 0;
+    } catch (error) {
+      this.logger.warn(
+        `Không thể check active consumers từ Consumer Service: ${error.message}`,
+      );
+      return 0; // Fallback
+    }
+  }
+
   // ==================================================================
   // PHẦN 1: TOPIC MANAGEMENT
   // ==================================================================
@@ -177,82 +202,6 @@ export class AdminService implements OnModuleInit, OnModuleDestroy {
       return { status: 'error', message: 'Không thể lấy danh sách topic.' };
     }
   }
-// ==================================================================
-  // PHẦN 2: STATISTICS
-  // ==================================================================
-  // ✅ Helper: Lấy producer statistics theo topic
-  private async getProducerStatsByTopic(): Promise<
-    Record<string, { totalRecords: number; batches: number }>
-  > {
-    const producerServiceUrl = process.env.PRODUCER_SERVICE_URL || 'http://3.107.102.127:3000';
-    try {
-      // Query producer-log database để lấy statistics
-      const response = await axios.get(
-        `${producerServiceUrl}/api/producers/statistics`,
-        {
-          timeout: 5000,
-        },
-      );
-
-      if (response.data.success && response.data.byTopic) {
-        const stats: Record<string, { totalRecords: number; batches: number }> =
-          {};
-
-        // response.data.byTopic is already an array with topic breakdown
-        response.data.byTopic.forEach((topicStat: any) => {
-          stats[topicStat.topic] = {
-            totalRecords: topicStat.totalRecords || 0,
-            batches: topicStat.totalBatches || 0,
-          };
-        });
-
-        return stats;
-      }
-
-      return {};
-    } catch (error) {
-      console.warn('[Admin] Cannot fetch producer stats:', error.message);
-      return {};
-    }
-  }
-
-  // ✅ Helper: Lấy consumer statistics theo topic
-  private async getConsumerStatsByTopic(): Promise<
-    Record<string, { consumerCount: number }>
-  > {
-    try {
-      // Query consumer instances từ Consumer Service
-      const consumerServiceUrl =
-        process.env.CONSUMER_SERVICE_URL || 'http://:3001';
-      const response = await axios.get(
-        `${consumerServiceUrl}/api/consumers/instances`,
-        {
-          timeout: 5000,
-        },
-      );
-
-      if (response.data.success && response.data.data) {
-        const stats: Record<string, { consumerCount: number }> = {};
-
-        // Đếm số lượng ACTIVE consumers cho mỗi topic
-        response.data.data.forEach((instance: any) => {
-          if (instance.status === 'ACTIVE' && instance.topicName) {
-            if (!stats[instance.topicName]) {
-              stats[instance.topicName] = { consumerCount: 0 };
-            }
-            stats[instance.topicName].consumerCount++;
-          }
-        });
-
-        return stats;
-      }
-
-      return {};
-    } catch (error) {
-      console.warn('[Admin] Cannot fetch consumer stats:', error.message);
-      return {};
-    }
-  }
 
   // Hàm kiểm tra topic đã tồn tại hay chưa
   private async topicExists(topicName: string): Promise<boolean> {
@@ -262,38 +211,39 @@ export class AdminService implements OnModuleInit, OnModuleDestroy {
 
   // Hàm xóa topic
   async deleteTopic(topicName: string) {
-    console.log(`AdminService: Đang xóa topic ${topicName}...`);
-
     try {
-      // Kiểm tra topic có tồn tại không
-      const topicExists = await this.topicExists(topicName);
-      if (!topicExists) {
-        console.log(`AdminService: Topic ${topicName} không tồn tại.`);
-        return { status: 'warn', message: 'Topic không tồn tại.' };
+      // ✅ CHECK 1: Kiểm tra xem có Consumer nào đang Active với topic này không
+      const activeCount = await this.getActiveConsumersCount(topicName);
+
+      if (activeCount > 0) {
+        return {
+          status: 'error',
+          message: `Không thể xóa! Đang có ${activeCount} consumer instances đang subscribe topic này. Vui lòng Stop Consumers trước.`,
+        };
       }
 
-      // ⚠️ Ghi chú: Nếu có consumer đang hoạt động, topic sẽ bị đánh dấu xóa
-      // nhưng chỉ thực sự xóa khi tất cả consumers disconnect
-      await this.kafkaAdmin.deleteTopics({
-        topics: [topicName],
-        timeout: 10000, // Tăng timeout lên 10 giây
-      });
+      this.logger.log(`Đang xóa topic ${topicName}...`);
 
-      console.log(`AdminService: Đã gửi lệnh xóa topic ${topicName}.`);
-      console.log(
-        `⚠️ Lưu ý: Topic sẽ bị xóa khi tất cả consumers ngắt kết nối.`,
-      );
+      // Xóa Topic
+      await this.kafkaAdmin.deleteTopics({ topics: [topicName] });
+
+      // Kiểm tra lại xem xóa được chưa
+      setTimeout(async () => {
+        const currentTopics = await this.kafkaAdmin.listTopics();
+        if (currentTopics.includes(topicName)) {
+          this.logger.warn(
+            `⚠️ Topic ${topicName} vẫn đang marked for deletion.`,
+          );
+        }
+      }, 2000);
 
       return {
         status: 'success',
-        message: `Topic ${topicName} đã được đánh dấu xóa. Sẽ xóa hoàn toàn khi consumers ngắt kết nối.`,
+        message: 'Đã gửi lệnh xóa topic thành công.',
       };
     } catch (error) {
-      console.error('Lỗi khi xóa topic:', error);
-      return {
-        status: 'error',
-        message: `Không thể xóa topic: ${error.message}. Topic có thể đang được sử dụng bởi consumers.`,
-      };
+      this.logger.error('Lỗi xóa topic:', error);
+      return { status: 'error', message: error.message };
     }
   }
 
@@ -375,12 +325,12 @@ export class AdminService implements OnModuleInit, OnModuleDestroy {
         return { status: 'warn', message: 'Topic không tồn tại.' };
       }
 
-      // Lấy metadata
+      // 1. Lấy metadata từ Kafka Broker (Partition, Replication...)
       const metadata = await this.kafkaAdmin.fetchTopicMetadata({
         topics: [topicName],
       });
 
-      // Lấy configs
+      // 2. Lấy configs từ Kafka Broker (Retention, Segment size...)
       const configs = await this.kafkaAdmin.describeConfigs({
         includeSynonyms: false,
         resources: [
@@ -391,11 +341,16 @@ export class AdminService implements OnModuleInit, OnModuleDestroy {
         ],
       });
 
+      // 3. ✅ Lấy số lượng Consumer ACTIVE từ Database (Chính xác hơn Kafka metadata)
+      const realConsumerCount = await this.getActiveConsumersCount(topicName);
+
       return {
         status: 'success',
         data: {
           metadata: metadata.topics[0],
           configs: configs.resources[0]?.configEntries || [],
+          // ✅ Thêm trường này để Frontend hiển thị đúng số lượng
+          activeConsumers: realConsumerCount,
         },
       };
     } catch (error) {
@@ -403,9 +358,86 @@ export class AdminService implements OnModuleInit, OnModuleDestroy {
       return { status: 'error', message: 'Không thể lấy chi tiết topic.' };
     }
   }
+  // ==================================================================
+  // PHẦN 2: STATISTICS
+  // ==================================================================
+  // ✅ Helper: Lấy producer statistics theo topic
+  private async getProducerStatsByTopic(): Promise<
+    Record<string, { totalRecords: number; batches: number }>
+  > {
+    const producerServiceUrl =
+      process.env.PRODUCER_SERVICE_URL || 'http://3.107.102.127:3000';
+    try {
+      // Query producer-log database để lấy statistics
+      const response = await axios.get(
+        `${producerServiceUrl}/api/producers/statistics`,
+        {
+          timeout: 5000,
+        },
+      );
+
+      if (response.data.success && response.data.byTopic) {
+        const stats: Record<string, { totalRecords: number; batches: number }> =
+          {};
+
+        // response.data.byTopic is already an array with topic breakdown
+        response.data.byTopic.forEach((topicStat: any) => {
+          stats[topicStat.topic] = {
+            totalRecords: topicStat.totalRecords || 0,
+            batches: topicStat.totalBatches || 0,
+          };
+        });
+
+        return stats;
+      }
+
+      return {};
+    } catch (error) {
+      console.warn('[Admin] Cannot fetch producer stats:', error.message);
+      return {};
+    }
+  }
+
+  // ✅ Helper: Lấy consumer statistics theo topic
+  private async getConsumerStatsByTopic(): Promise<
+    Record<string, { consumerCount: number }>
+  > {
+    try {
+      // Query consumer instances từ Consumer Service
+      const consumerServiceUrl =
+        process.env.CONSUMER_SERVICE_URL || 'http://:3001';
+      const response = await axios.get(
+        `${consumerServiceUrl}/api/consumers/instances`,
+        {
+          timeout: 5000,
+        },
+      );
+
+      if (response.data.success && response.data.data) {
+        const stats: Record<string, { consumerCount: number }> = {};
+
+        // Đếm số lượng ACTIVE consumers cho mỗi topic
+        response.data.data.forEach((instance: any) => {
+          if (instance.status === 'ACTIVE' && instance.topicName) {
+            if (!stats[instance.topicName]) {
+              stats[instance.topicName] = { consumerCount: 0 };
+            }
+            stats[instance.topicName].consumerCount++;
+          }
+        });
+
+        return stats;
+      }
+
+      return {};
+    } catch (error) {
+      console.warn('[Admin] Cannot fetch consumer stats:', error.message);
+      return {};
+    }
+  }
 
   /// ==================================================================
-  // PHẦN 3: CONSUMER MANAGEMENT 
+  // PHẦN 3: CONSUMER MANAGEMENT
   // ==================================================================
 
   /**
@@ -475,15 +507,23 @@ export class AdminService implements OnModuleInit, OnModuleDestroy {
   //   }
   // }
 
-    // admin.service.ts
-  async createAdvancedConsumer(groupId: string, topics: string[], count: number) {
+  // admin.service.ts
+  async createAdvancedConsumer(
+    groupId: string,
+    topics: string[],
+    count: number,
+  ) {
     // Gọi sang Consumer Service
-    const consumerServiceUrl = process.env.CONSUMER_SERVICE_URL || 'http://consumer-service:3001';
-    const response = await axios.post(`${consumerServiceUrl}/api/consumers/dynamic/advanced`, {
+    const consumerServiceUrl =
+      process.env.CONSUMER_SERVICE_URL || 'http://consumer-service:3001';
+    const response = await axios.post(
+      `${consumerServiceUrl}/api/consumers/dynamic/advanced`,
+      {
         groupId,
         topics,
-        count
-    });
+        count,
+      },
+    );
     return response.data;
   }
 
@@ -495,11 +535,12 @@ export class AdminService implements OnModuleInit, OnModuleDestroy {
       this.logger.log(`Scale Down yêu cầu (Stop)`);
 
       const currentCount = await this.getDockerConsumerCount();
-      
+
       if (currentCount <= 1) {
         return {
-            status: 'warning',
-            message: 'Đây là instance cuối cùng. Vui lòng dùng Delete nếu muốn xóa sạch.',
+          status: 'warning',
+          message:
+            'Đây là instance cuối cùng. Vui lòng dùng Delete nếu muốn xóa sạch.',
         };
       }
 
@@ -531,11 +572,11 @@ export class AdminService implements OnModuleInit, OnModuleDestroy {
       );
 
       if (response.data.success) {
-         // Logic gửi socket cũ của bạn
-         if (this.consumerServiceSocket) {
-            this.consumerServiceSocket.emit('consumer-deleted', { consumerId });
-         }
-         return { status: 'success', message: `Đã xóa ${consumerId} khỏi DB` };
+        // Logic gửi socket cũ của bạn
+        if (this.consumerServiceSocket) {
+          this.consumerServiceSocket.emit('consumer-deleted', { consumerId });
+        }
+        return { status: 'success', message: `Đã xóa ${consumerId} khỏi DB` };
       }
       return { status: 'error', message: 'Lỗi từ Consumer Service' };
     } catch (error) {

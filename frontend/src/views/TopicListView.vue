@@ -141,8 +141,15 @@
               </span>
             </td>
             <td class="px-6 py-4 text-sm text-gray-900 whitespace-nowrap">
-              <span class="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
-                {{ topic.consumerCount || 0 }} consumers
+              <span
+                class="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium transition-colors"
+                :class="[
+                  (topic.consumerCount || topic.activeConsumers || 0) > 0
+                    ? 'bg-green-100 text-green-800 ring-1 ring-green-600/20'
+                    : 'bg-gray-100 text-gray-600'
+                ]"
+              >
+                {{ topic.consumerCount || topic.activeConsumers || 0 }} consumers
               </span>
             </td>
             <td class="px-6 py-4 whitespace-nowrap text-center">
