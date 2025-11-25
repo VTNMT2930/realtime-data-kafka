@@ -244,4 +244,30 @@ export class DynamicConsumerService implements OnModuleInit, OnModuleDestroy {
 			return { success: false, message: "Không tìm thấy instance đang chạy." };
 		}
 	}
+
+	async stopInstance(consumerId: string) {
+		this.logger.log(`[Dynamic] Yêu cầu dừng instance: ${consumerId}`);
+
+		const consumer = this.activeConsumers.get(consumerId);
+
+		if (consumer) {
+			try {
+				// 1. Ngắt kết nối mạng
+				await consumer.disconnect();
+				// 2. Dừng vòng lặp xử lý (Quan trọng)
+				await consumer.stop();
+
+				// 3. Xóa khỏi bộ nhớ quản lý
+				this.activeConsumers.delete(consumerId);
+
+				this.logger.log(`[Dynamic] 🛑 Đã kill process consumer: ${consumerId}`);
+			} catch (error) {
+				this.logger.error(`Lỗi khi dừng consumer ${consumerId}:`, error);
+			}
+		} else {
+			this.logger.warn(
+				`[Dynamic] Không tìm thấy process đang chạy cho: ${consumerId}`
+			);
+		}
+	}
 }
