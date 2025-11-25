@@ -94,28 +94,39 @@ export class AdminService implements OnModuleInit, OnModuleDestroy {
     }
   }
 
-  private async getActiveConsumersCount(topicName: string): Promise<number> {
+  private async getConsumerCount(
+    topicName: string,
+    status?: string,
+  ): Promise<number> {
     try {
       const consumerServiceUrl =
         process.env.CONSUMER_SERVICE_URL || 'http://consumer-service:3001';
-      // Gọi API vừa sửa ở Bước 1
+
+      // Tạo params: Luôn lọc theo topic
+      const params: any = { topic: topicName };
+
+      // ⚠️ ĐIỂM QUAN TRỌNG:
+      // Nếu truyền status => Chỉ đếm theo status đó (ví dụ 'ACTIVE')
+      // Nếu KHÔNG truyền status => Đếm TẤT CẢ (Active + Inactive)
+      if (status) {
+        params.status = status;
+      }
+
       const response = await axios.get(
         `${consumerServiceUrl}/api/consumers/instances`,
         {
-          params: {
-            topic: topicName,
-            status: 'ACTIVE', // Chỉ đếm những thằng đang chạy
-          },
-          timeout: 3000,
+          params,
+          timeout: 2000,
         },
       );
 
-      return response.data ? response.data.length : 0;
+      if (Array.isArray(response.data)) return response.data.length;
+      if (response.data && Array.isArray(response.data.data))
+        return response.data.data.length;
+
+      return 0;
     } catch (error) {
-      this.logger.warn(
-        `Không thể check active consumers từ Consumer Service: ${error.message}`,
-      );
-      return 0; // Fallback
+      return 0;
     }
   }
 
@@ -211,39 +222,35 @@ export class AdminService implements OnModuleInit, OnModuleDestroy {
 
   // Hàm xóa topic
   async deleteTopic(topicName: string) {
-    try {
-      // ✅ CHECK 1: Kiểm tra xem có Consumer nào đang Active với topic này không
-      const activeCount = await this.getActiveConsumersCount(topicName);
+    this.logger.log(`Yêu cầu xóa topic ${topicName}...`);
 
-      if (activeCount > 0) {
+    try {
+      // 1. Kiểm tra Consumer liên kết
+      // Gọi hàm đếm KHÔNG truyền status => Đếm cả Active lẫn Inactive
+      const totalLinkedConsumers = await this.getConsumerCount(topicName);
+
+      // Nếu còn bất kỳ consumer nào (kể cả đã Stop) -> CHẶN XÓA
+      if (totalLinkedConsumers > 0) {
         return {
           status: 'error',
-          message: `Không thể xóa! Đang có ${activeCount} consumer instances đang subscribe topic này. Vui lòng Stop Consumers trước.`,
+          message: `Không thể xóa! Có ${totalLinkedConsumers} consumer (Active/Inactive) vẫn đang liên kết với topic này. Vui lòng DELETE consumer vĩnh viễn trước.`,
         };
       }
 
-      this.logger.log(`Đang xóa topic ${topicName}...`);
+      // 2. Kiểm tra Topic tồn tại
+      const topicExists = await this.topicExists(topicName);
+      if (!topicExists)
+        return { status: 'warn', message: 'Topic không tồn tại.' };
 
-      // Xóa Topic
+      // 3. Thực hiện xóa
       await this.kafkaAdmin.deleteTopics({ topics: [topicName] });
-
-      // Kiểm tra lại xem xóa được chưa
-      setTimeout(async () => {
-        const currentTopics = await this.kafkaAdmin.listTopics();
-        if (currentTopics.includes(topicName)) {
-          this.logger.warn(
-            `⚠️ Topic ${topicName} vẫn đang marked for deletion.`,
-          );
-        }
-      }, 2000);
 
       return {
         status: 'success',
-        message: 'Đã gửi lệnh xóa topic thành công.',
+        message: 'Topic đã được xóa thành công.',
       };
     } catch (error) {
-      this.logger.error('Lỗi xóa topic:', error);
-      return { status: 'error', message: error.message };
+      return { status: 'error', message: `Lỗi: ${error.message}` };
     }
   }
 
@@ -321,40 +328,29 @@ export class AdminService implements OnModuleInit, OnModuleDestroy {
   async getTopicDetail(topicName: string) {
     try {
       const topicExists = await this.topicExists(topicName);
-      if (!topicExists) {
+      if (!topicExists)
         return { status: 'warn', message: 'Topic không tồn tại.' };
-      }
 
-      // 1. Lấy metadata từ Kafka Broker (Partition, Replication...)
       const metadata = await this.kafkaAdmin.fetchTopicMetadata({
         topics: [topicName],
       });
-
-      // 2. Lấy configs từ Kafka Broker (Retention, Segment size...)
       const configs = await this.kafkaAdmin.describeConfigs({
         includeSynonyms: false,
-        resources: [
-          {
-            type: 2, // TOPIC = 2
-            name: topicName,
-          },
-        ],
+        resources: [{ type: 2, name: topicName }],
       });
 
-      // 3. ✅ Lấy số lượng Consumer ACTIVE từ Database (Chính xác hơn Kafka metadata)
-      const realConsumerCount = await this.getActiveConsumersCount(topicName);
+      // Lấy tổng số consumer (để hiển thị cho user biết quy mô topic)
+      const totalConsumerCount = await this.getConsumerCount(topicName);
 
       return {
         status: 'success',
         data: {
           metadata: metadata.topics[0],
           configs: configs.resources[0]?.configEntries || [],
-          // ✅ Thêm trường này để Frontend hiển thị đúng số lượng
-          activeConsumers: realConsumerCount,
+          activeConsumers: totalConsumerCount,
         },
       };
     } catch (error) {
-      console.error('Lỗi khi lấy chi tiết topic:', error);
       return { status: 'error', message: 'Không thể lấy chi tiết topic.' };
     }
   }
