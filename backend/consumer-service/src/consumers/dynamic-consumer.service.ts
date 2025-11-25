@@ -189,56 +189,59 @@ export class DynamicConsumerService implements OnModuleInit, OnModuleDestroy {
 	async stopGroup(groupId: string) {
 		const keysToRemove: string[] = [];
 
-		// Duyệt map để tìm các instance thuộc group này
-		for (const key of this.activeConsumers.keys()) {
-			if (key.startsWith(`${groupId}-`) || key === groupId) {
-				const consumer = this.activeConsumers.get(key);
-				if (consumer) {
-					try {
-						this.logger.log(`[Dynamic] Đang dừng triệt để consumer: ${key}`);
-						// 1. Ngắt kết nối mạng
-						await consumer.disconnect();
-						// 2. Dừng vòng lặp xử lý (quan trọng để không rejoin)
-						await consumer.stop();
-					} catch (e) {
-						this.logger.error(`Lỗi stop consumer ${key}`, e);
-					}
+		this.logger.log(`[Dynamic] Bắt đầu quy trình dừng Group: ${groupId}`);
+
+		// 1. Duyệt qua tất cả active consumers
+		for (const [key, consumer] of this.activeConsumers) {
+			// Kiểm tra key có thuộc group cần xóa không
+			if (key === groupId || key.startsWith(`${groupId}-`)) {
+				try {
+					this.logger.log(`[Dynamic] Đang ngắt kết nối: ${key}`);
+
+					// A. Ngắt kết nối mạng trước
+					await consumer.disconnect();
+
+					// B. Stop consumer (quan trọng để không rejoin)
+					await consumer.stop();
+				} catch (e: any) {
+					this.logger.error(`Lỗi khi dừng consumer ${key}: ${e.message}`);
 				}
+
 				keysToRemove.push(key);
 
-				// Cập nhật DB thành INACTIVE ngay lập tức
+				// 2. Cập nhật DB thành INACTIVE ngay lập tức
 				try {
-					await this.instanceRepo.update({ id: key }, { status: "INACTIVE" });
-				} catch (e) {}
+					// Tìm theo ID (chính xác là key trong map)
+					const instance = await this.instanceRepo.findOne({
+						where: { id: key },
+					});
+					if (instance) {
+						instance.status = "INACTIVE"; // Hoặc Enum ConsumerInstanceStatus.INACTIVE
+						instance.shouldStop = true; // Đánh dấu cờ stop
+						await this.instanceRepo.save(instance);
+					}
+				} catch (e) {
+					this.logger.error(`Lỗi update DB status ${key}`, e);
+				}
 			}
 		}
 
-		// Xóa khỏi RAM
-		keysToRemove.forEach((k) => this.activeConsumers.delete(k));
-
-		return { success: true, stopped: keysToRemove.length };
-	}
-
-	// Bổ sung hàm stop riêng lẻ cho 1 instance nếu cần (dùng cho nút Delete/Stop từng dòng)
-	async stopInstance(instanceId: string) {
-		const consumer = this.activeConsumers.get(instanceId);
-		if (consumer) {
-			try {
-				await consumer.disconnect();
-				await consumer.stop();
-				this.activeConsumers.delete(instanceId);
-
-				await this.instanceRepo.update(
-					{ id: instanceId },
-					{ status: "INACTIVE" }
-				);
-
-				return { success: true, message: `Instance ${instanceId} stopped` };
-			} catch (e) {
-				this.logger.error(`Failed to stop instance ${instanceId}`, e);
-				throw e;
-			}
+		// 3. Xóa khỏi bộ nhớ RAM (Để nó không bao giờ tìm lại được)
+		if (keysToRemove.length > 0) {
+			keysToRemove.forEach((k) => {
+				this.activeConsumers.delete(k);
+				this.logger.log(`[Dynamic] Đã xóa ${k} khỏi bộ nhớ Active Map.`);
+			});
+			return {
+				success: true,
+				stopped: keysToRemove.length,
+				message: `Đã dừng ${keysToRemove.length} instance.`,
+			};
+		} else {
+			this.logger.warn(
+				`[Dynamic] Không tìm thấy instance nào thuộc group ${groupId} đang chạy.`
+			);
+			return { success: false, message: "Không tìm thấy instance đang chạy." };
 		}
-		return { success: false, message: "Instance not found in active list" };
 	}
 }
