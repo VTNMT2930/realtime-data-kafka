@@ -424,7 +424,7 @@ export default {
     },
     async checkProducerService() {
       try {
-        const response = await axios.get("http://3.27.218.52:3000/api", {
+        const response = await axios.get("https://nhanit.id.vn/api", {
 
           timeout: 3000,
         });
@@ -435,7 +435,7 @@ export default {
     },
     async checkConsumerService() {
       try {
-        const response = await axios.get("http://3.27.218.52:3001/api/consumers/stats", {
+        const response = await axios.get("https://nhanit.id.vn/api/consumers/stats", {
 
           timeout: 3000,
         });
@@ -447,7 +447,7 @@ export default {
     async checkKafkaStatus() {
       try {
         // Check Kafka thông qua Producer Service
-        const response = await axios.get("http://3.27.218.52:3000/api/admin/topics", {
+        const response = await axios.get("https://nhanit.id.vn/api/admin/topics", {
 
           timeout: 3000,
         });
