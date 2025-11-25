@@ -58,7 +58,7 @@ export class DynamicConsumerService implements OnModuleInit, OnModuleDestroy {
 			`[Dynamic] Tạo Group: ${groupId} | Topics: ${topics} | Instance: ${instanceCount}`
 		);
 
-		const results = [];
+		const results: string[] = [];
 
 		for (let i = 0; i < instanceCount; i++) {
 			const instanceId = `${groupId}-inst-${i}`;
@@ -96,7 +96,7 @@ export class DynamicConsumerService implements OnModuleInit, OnModuleDestroy {
 
 				this.activeConsumers.set(instanceId, consumer);
 				await this.saveInstanceToDB(instanceId, groupId, topics, "active");
-				results.push(instanceId as never);
+				results.push(instanceId);
 			} catch (error) {
 				this.logger.error(`Lỗi tạo instance ${instanceId}:`, error);
 				await this.saveInstanceToDB(instanceId, groupId, topics, "ERROR");
@@ -187,47 +187,34 @@ export class DynamicConsumerService implements OnModuleInit, OnModuleDestroy {
 	}
 
 	async stopGroup(groupId: string) {
-		const keysToRemove = [];
+		const keysToRemove: string[] = [];
 
-		// Duyệt qua tất cả các active consumers
+		// Duyệt map để tìm các instance thuộc group này
 		for (const key of this.activeConsumers.keys()) {
-			// Kiểm tra nếu key bắt đầu bằng groupId (ví dụ "A-inst-0" bắt đầu bằng "A-")
-			// HOẶC nếu key chính là groupId (trường hợp key lưu dạng "A")
-			// Logic cũ: if (key.startsWith(`${groupId}-`)) -> Có thể bỏ sót nếu key lưu kiểu khác
 			if (key.startsWith(`${groupId}-`) || key === groupId) {
 				const consumer = this.activeConsumers.get(key);
 				if (consumer) {
 					try {
-						this.logger.log(`[Dynamic] Đang ngắt kết nối consumer: ${key}`);
-						// 1. Ngắt kết nối Kafka
+						this.logger.log(`[Dynamic] Đang dừng triệt để consumer: ${key}`);
+						// 1. Ngắt kết nối mạng
 						await consumer.disconnect();
-						// 2. (Quan trọng) Stop việc chạy của consumer nếu đang run
+						// 2. Dừng vòng lặp xử lý (quan trọng để không rejoin)
 						await consumer.stop();
-					} catch (e: any) {
-						this.logger.error(`Lỗi disconnect ${key}`, e);
+					} catch (e) {
+						this.logger.error(`Lỗi stop consumer ${key}`, e);
 					}
 				}
+				keysToRemove.push(key);
 
-				keysToRemove.push(key as never);
-
-				// Cập nhật DB thành INACTIVE
+				// Cập nhật DB thành INACTIVE ngay lập tức
 				try {
-					// Lưu ý: Đảm bảo logic update DB dùng đúng ID
-					await this.instanceRepo.update(
-						{ id: key }, // Hoặc consumerId: key tùy entity
-						{ status: "INACTIVE" } // Hoặc enum ConsumerInstanceStatus.INACTIVE
-					);
-				} catch (e) {
-					this.logger.error(`Lỗi update DB status ${key}`, e);
-				}
+					await this.instanceRepo.update({ id: key }, { status: "INACTIVE" });
+				} catch (e) {}
 			}
 		}
 
-		// 3. Xóa khỏi bộ nhớ RAM để nó không bao giờ chạy lại
-		keysToRemove.forEach((k) => {
-			this.activeConsumers.delete(k);
-			this.logger.log(`[Dynamic] Đã xóa consumer ${k} khỏi bộ nhớ.`);
-		});
+		// Xóa khỏi RAM
+		keysToRemove.forEach((k) => this.activeConsumers.delete(k));
 
 		return { success: true, stopped: keysToRemove.length };
 	}
