@@ -103,8 +103,8 @@ services:
       context: ./frontend
       args:
         # ✅ QUAN TRỌNG: Frontend phải biết nó đang chạy ở domain nào
-        - VITE_PRODUCER_URL=http://nhanit.id.vn/api
-        - VITE_CONSUMER_URL=http://nhanit.id.vn/api
+        - VITE_PRODUCER_URL=https://nhanit.id.vn/api
+        - VITE_CONSUMER_URL=https://nhanit.id.vn/api
     container_name: frontend-prod
     restart: always
     ports:
