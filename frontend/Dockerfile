@@ -7,6 +7,14 @@ COPY . .
 
 RUN npm run build
 
+# ✅ QUAN TRỌNG: Phải đặt đoạn này TRƯỚC lệnh build
+ARG VITE_PRODUCER_URL
+ARG VITE_CONSUMER_URL
+
+# Gán giá trị từ ARG sang ENV để Vite đọc được
+ENV VITE_PRODUCER_API_URL=$VITE_PRODUCER_URL
+ENV VITE_CONSUMER_API_URL=$VITE_CONSUMER_URL
+
 # Production Stage (Dùng Nginx)
 FROM nginx:stable-alpine as production-stage
 COPY --from=build-stage /app/dist /usr/share/nginx/html
@@ -14,10 +22,10 @@ COPY --from=build-stage /app/dist /usr/share/nginx/html
 RUN echo 'server { \
     listen 80; \
     location / { \
-        root /usr/share/nginx/html; \
-        index index.html index.htm; \
-        try_files $uri $uri/ /index.html; \
+    root /usr/share/nginx/html; \
+    index index.html index.htm; \
+    try_files $uri $uri/ /index.html; \
     } \
-}' > /etc/nginx/conf.d/default.conf
+    }' > /etc/nginx/conf.d/default.conf
 EXPOSE 80
 CMD ["nginx", "-g", "daemon off;"]
