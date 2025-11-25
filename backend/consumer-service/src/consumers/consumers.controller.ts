@@ -108,9 +108,6 @@ export class ConsumersController {
 	// ✅ API để stop consumer instance (chuyển từ ACTIVE sang INACTIVE)
 	@Put("instances/:consumerId/stop")
 	async stopConsumerInstance(@Param("consumerId") consumerId: string) {
-		// 1. Kill Runtime Process
-		await this.dynamicService.stopInstance(consumerId);
-
 		// 2. Update Database Status
 		return this.consumersService.stopConsumerInstance(consumerId);
 	}
