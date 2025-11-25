@@ -1,7 +1,7 @@
 // Backend NestJS chạy ở 2 ports khác nhau
 
-const PRODUCER_API_BASE_URL = import.meta.env.VITE_PRODUCER_URL || "http://localhost:3000/api";
-const CONSUMER_API_BASE_URL = import.meta.env.VITE_CONSUMER_URL || "http://localhost:3001/api";
+const PRODUCER_API_BASE_URL = import.meta.env.VITE_PRODUCER_URL || "https://nhanit.id.vn/api";
+const CONSUMER_API_BASE_URL = import.meta.env.VITE_CONSUMER_URL || "https://nhanit.id.vn/api";
 
 
 /**
