@@ -142,14 +142,17 @@
             </td>
             <td class="px-6 py-4 text-sm text-gray-900 whitespace-nowrap">
               <span
-                class="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium transition-colors"
+                class="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium border"
                 :class="[
-                  (topic.consumerCount || topic.activeConsumers || 0) > 0
-                    ? 'bg-green-100 text-green-800 ring-1 ring-green-600/20'
-                    : 'bg-gray-100 text-gray-600'
+                  (topic.consumerCount || 0) > 0
+                    ? 'bg-green-100 text-green-800 border-green-200'
+                    : 'bg-gray-100 text-gray-500 border-gray-200'
                 ]"
               >
-                {{ topic.consumerCount || topic.activeConsumers || 0 }} consumers
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
+                </svg>
+                {{ topic.consumerCount || 0 }} consumers
               </span>
             </td>
             <td class="px-6 py-4 whitespace-nowrap text-center">

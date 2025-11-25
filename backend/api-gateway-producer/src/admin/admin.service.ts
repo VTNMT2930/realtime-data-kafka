@@ -403,33 +403,45 @@ export class AdminService implements OnModuleInit, OnModuleDestroy {
     Record<string, { consumerCount: number }>
   > {
     try {
-      // Query consumer instances từ Consumer Service
       const consumerServiceUrl =
-        process.env.CONSUMER_SERVICE_URL || 'http://:3001';
+        process.env.CONSUMER_SERVICE_URL || 'http://consumer-service:3001';
+
+      // Gọi API lấy danh sách tất cả instances
       const response = await axios.get(
         `${consumerServiceUrl}/api/consumers/instances`,
-        {
-          timeout: 5000,
-        },
+        { timeout: 5000 },
       );
 
-      if (response.data.success && response.data.data) {
-        const stats: Record<string, { consumerCount: number }> = {};
+      const stats: Record<string, { consumerCount: number }> = {};
 
-        // Đếm số lượng ACTIVE consumers cho mỗi topic
-        response.data.data.forEach((instance: any) => {
-          if (instance.status === 'ACTIVE' && instance.topicName) {
-            if (!stats[instance.topicName]) {
-              stats[instance.topicName] = { consumerCount: 0 };
+      // ✅ FIX: Kiểm tra nếu response.data là mảng (Format mới)
+      const instances = Array.isArray(response.data)
+        ? response.data
+        : response.data.data || [];
+
+      // Đếm số lượng ACTIVE consumers cho mỗi topic
+      instances.forEach((instance: any) => {
+        // Chỉ đếm nếu status là ACTIVE (không phân biệt hoa thường)
+        if (instance.status && instance.status.toUpperCase() === 'ACTIVE') {
+          // Topic có thể là chuỗi "topic1,topic2" hoặc topicName đơn lẻ
+          // Cần tách ra để đếm cho đúng từng topic
+          const topics = (instance.topics || instance.topicName || '').split(
+            ',',
+          );
+
+          topics.forEach((t) => {
+            const topicName = t.trim();
+            if (topicName) {
+              if (!stats[topicName]) {
+                stats[topicName] = { consumerCount: 0 };
+              }
+              stats[topicName].consumerCount++;
             }
-            stats[instance.topicName].consumerCount++;
-          }
-        });
+          });
+        }
+      });
 
-        return stats;
-      }
-
-      return {};
+      return stats;
     } catch (error) {
       console.warn('[Admin] Cannot fetch consumer stats:', error.message);
       return {};
