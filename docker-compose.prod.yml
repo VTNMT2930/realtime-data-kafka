@@ -1,3 +1,5 @@
+version: "3.8"
+
 services:
   # 1. ZOOKEEPER
   zookeeper:
@@ -40,7 +42,13 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./init.sql:/docker-entrypoint-initdb.d/init.sql
-
+  # --- THÊM SERVICE REDIS ---
+  redis:
+    image: redis:alpine
+    container_name: redis-prod
+    restart: always
+    ports:
+      - "6379:6379" # Mở port nếu cần debug từ ngoài, không thì bỏ cũng được
   # PRODUCER API
   api-producer:
     build: ./backend/api-gateway-producer
@@ -107,5 +115,6 @@ services:
     depends_on:
       - api-producer
       - consumer-service
+
 volumes:
   postgres_data:
