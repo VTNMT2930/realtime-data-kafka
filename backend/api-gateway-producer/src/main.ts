@@ -10,8 +10,13 @@ async function bootstrap() {
 
   // ✅ ENABLE CORS
   app.enableCors({
-    origin: '*', // Cho phép mọi origin (dev only)
-    methods: 'GET,HEAD,PUT,PATCH,POST,DELETE',
+    origin: [
+      'http://nhanit.id.vn',
+      'http://www.nhanit.id.vn',
+      'http://3.27.218.52', // Giữ lại IP để test nếu cần
+      'http://localhost:3000',
+    ], // Cho phép mọi origin (dev only)
+    methods: 'GET,HEAD,PUT,PATCH,POST,DELETE,OPTIONS',
     credentials: true,
   });
 

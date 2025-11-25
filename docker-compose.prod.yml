@@ -43,38 +43,41 @@ services:
       - postgres_data:/var/lib/postgresql/data
       - ./init.sql:/docker-entrypoint-initdb.d/init.sql
 
-  # 4. PRODUCER API
+  # PRODUCER API
   api-producer:
     build: ./backend/api-gateway-producer
     container_name: api-producer-prod
     restart: always
     ports:
-      - "3000:3000"
+      - "3000:3000" # Giữ lại để test IP nếu cần, hoặc đóng lại cũng được
     environment:
       - PORT=3000
       - KAFKA_BROKER=kafka:29092
-      # Cấu hình DB
       - DB_HOST=postgres
       - DB_PORT=5432
       - DB_USERNAME=admin
       - DB_PASSWORD=admin
       - DB_DATABASE=producer_logs
-      - DB_SYNC=true # Tự tạo bảng
-      - CONSUMER_SERVICE_URL=http://3.27.218.52:3001
-      - PRODUCER_SERVICE_URL=http://3.27.218.52:3000
+      - DB_SYNC=true
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      # Cập nhật URL nội bộ hoặc public domain đều được
+      - CONSUMER_SERVICE_URL=http://consumer-service:3001
+      - PRODUCER_SERVICE_URL=http://api-producer:3000
     volumes:
-      # Mount socket để điều khiển Docker
       - /var/run/docker.sock:/var/run/docker.sock
-      # Mount file compose vào trong container để lệnh chạy được
       - ./docker-compose.prod.yml:/app/docker-compose.prod.yml
     depends_on:
       - kafka
       - postgres
+      - redis
 
-  # 5. CONSUMER SERVICE
+  # CONSUMER SERVICE
   consumer-service:
     build: ./backend/consumer-service
     restart: always
+    # Không cần ports mapping nữa vì Nginx sẽ gọi nội bộ qua mạng Docker
+    # Nhưng giữ lại để debug nếu muốn: - "3001:3001"
     environment:
       - PORT=3001
       - KAFKA_BROKER=kafka:29092
@@ -88,33 +91,23 @@ services:
       - kafka
       - postgres
 
-  # THÊM SERVICE NGINX (Làm cổng chính)
-  nginx-lb:
-    image: nginx:alpine
-    ports:
-      - "3001:80" # Map cổng 3001 của máy chủ vào cổng 80 của Nginx
-    volumes:
-      - ./nginx.conf:/etc/nginx/nginx.conf:ro
-    depends_on:
-      - consumer-service
-
-  # --- THÊM SERVICE REDIS ---
-  redis:
-    image: redis:alpine
-    container_name: redis-prod
-    restart: always
-    ports:
-      - "6379:6379" # Mở port nếu cần debug từ ngoài, không thì bỏ cũng được
-
-  # 6. FRONTEND
+  # FRONTEND (Đóng vai trò Nginx Server chính)
   frontend:
-    build: ./frontend
+    build:
+      context: ./frontend
+      args:
+        # ✅ QUAN TRỌNG: Frontend phải biết nó đang chạy ở domain nào
+        - VITE_PRODUCER_URL=http://nhanit.id.vn/api
+        - VITE_CONSUMER_URL=http://nhanit.id.vn/api
     container_name: frontend-prod
     restart: always
     ports:
-      - "80:80"
+      - "80:80" # Cổng chính của Web
+    volumes:
+      # ✅ Mount file nginx.conf vào container frontend
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
     depends_on:
       - api-producer
-
+      - consumer-service
 volumes:
   postgres_data:
