@@ -14,6 +14,7 @@ async function bootstrap() {
 	// ✅ ENABLE CORS
 	app.enableCors({
 		origin: [
+			"http://localhost:5173",
 			"http://nhanit.id.vn",
 			"http://www.nhanit.id.vn",
 			"http://3.27.218.52", // Giữ lại IP để test nếu cần

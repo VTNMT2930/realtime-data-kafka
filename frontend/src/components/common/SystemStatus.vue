@@ -424,8 +424,7 @@ export default {
     },
     async checkProducerService() {
       try {
-        const response = await axios.get("https://nhanit.id.vn/api", {
-
+        const response = await axios.get("http://localhost:3000/api", {
           timeout: 3000,
         });
         this.producerStatus = response.status === 200 ? "online" : "offline";
@@ -435,8 +434,7 @@ export default {
     },
     async checkConsumerService() {
       try {
-        const response = await axios.get("https://nhanit.id.vn/api/consumers/stats", {
-
+        const response = await axios.get("http://localhost:3001/api/consumers/stats", {
           timeout: 3000,
         });
         this.consumerStatus = response.status === 200 ? "online" : "offline";
@@ -447,12 +445,17 @@ export default {
     async checkKafkaStatus() {
       try {
         // Check Kafka thông qua Producer Service
-        const response = await axios.get("https://nhanit.id.vn/api/admin/topics", {
-
-          timeout: 3000,
+        const response = await axios.get("http://localhost:3000/api/admin/topics", {
+          timeout: 6000,
         });
-        this.kafkaStatus = response.data.status === "success" ? "connected" : "disconnected";
+        // Kiểm tra response có data và status success
+        if (response.data && response.data.status === "success") {
+          this.kafkaStatus = "connected";
+        } else {
+          this.kafkaStatus = "disconnected";
+        }
       } catch (error) {
+        console.error("Kafka status check error:", error);
         this.kafkaStatus = "disconnected";
       }
     },

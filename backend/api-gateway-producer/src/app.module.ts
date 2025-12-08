@@ -16,9 +16,9 @@ import { ProducersModule } from './producers/producers.module';
     TypeOrmModule.forRoot({
       type: 'postgres',
       host: process.env.DB_HOST || 'localhost',
-      port: parseInt(process.env.DB_PORT || '5432'),
-      username: process.env.DB_USERNAME || '',
-      password: process.env.DB_PASSWORD || '',
+      port: parseInt(process.env.DB_PORT || '5433'),
+      username: process.env.DB_USERNAME || 'admin',
+      password: process.env.DB_PASSWORD || 'admin',
       database: process.env.DB_DATABASE || 'producer_logs',
 
       // Tự động tìm tất cả các file .entity.ts (như producer-log.entity.ts)

@@ -443,7 +443,7 @@ export default {
       console.log("🔌 Initializing WebSocket connection...");
 
       // Kết nối đến Consumer Service (Port 3001)
-      this.socket = io("https://nhanit.id.vn", {
+      this.socket = io("http://localhost:3001", {
         transports: ["websocket", "polling"], // Ưu tiên websocket
         reconnection: true,
         reconnectionDelay: 1000,
