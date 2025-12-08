@@ -1,5 +1,6 @@
 // src/app.module.ts
 import { Module } from '@nestjs/common';
+import { ConfigModule } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm'; // <<< ĐÃ THÊM
 import { BullModule } from '@nestjs/bull';
 import { join } from 'path'; // <<< ĐÃ THÊM
@@ -12,6 +13,10 @@ import { ProducersModule } from './producers/producers.module';
 
 @Module({
   imports: [
+    // --- 0. Load .env file ---
+    ConfigModule.forRoot({
+      isGlobal: true,
+    }),
     // --- 1. Cấu hình Database (PostgreSQL) ---
     TypeOrmModule.forRoot({
       type: 'postgres',

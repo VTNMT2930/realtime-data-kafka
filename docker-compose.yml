@@ -38,19 +38,19 @@ services:
     ports:
       - "6379:6379"
 
-  # 4. PostgreSQL Database
-  postgres:
-    image: postgres:15-alpine
-    container_name: postgres
-    environment:
-      POSTGRES_USER: admin
-      POSTGRES_PASSWORD: admin
-      POSTGRES_DB: producer_logs
-    ports:
-      - "5433:5433"
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-      - ./init.sql:/docker-entrypoint-initdb.d/init.sql
+  # 4. PostgreSQL Database - COMMENTED OUT (using local PostgreSQL instead)
+  # postgres:
+  #   image: postgres:15-alpine
+  #   container_name: postgres
+  #   environment:
+  #     POSTGRES_USER: admin
+  #     POSTGRES_PASSWORD: admin
+  #     POSTGRES_DB: producer_logs
+  #   ports:
+  #     - "5433:5432"
+  #   volumes:
+  #     - postgres_data:/var/lib/postgresql/data
+  #     - ./init.sql:/docker-entrypoint-initdb.d/init.sql
 
   # 5. Giao diện UI (Để xem Kafka)
   redpanda-console:

@@ -10,6 +10,7 @@ import { Repository } from "typeorm";
 import { ConsumerInstance } from "./entities/consumer-instance.entity";
 // 1. Import Entity và Enum Log
 import { ConsumerLog, ConsumerLogStatus } from "./entities/consumer-log.entity";
+import { ConsumersGateway } from "./consumers.gateway";
 
 @Injectable()
 export class DynamicConsumerService implements OnModuleInit, OnModuleDestroy {
@@ -22,13 +23,15 @@ export class DynamicConsumerService implements OnModuleInit, OnModuleDestroy {
 		private instanceRepo: Repository<ConsumerInstance>,
 		// 2. Inject Repository Log để lưu tin nhắn
 		@InjectRepository(ConsumerLog)
-		private logRepo: Repository<ConsumerLog>
+		private logRepo: Repository<ConsumerLog>,
+		// 3. Inject Gateway để emit WebSocket events
+		private gateway: ConsumersGateway
 	) {}
 
 	onModuleInit() {
 		this.kafka = new Kafka({
 			clientId: "dynamic-manager",
-			brokers: ["kafka:29092"],
+			brokers: [process.env.KAFKA_BROKER || "localhost:9092"],
 		});
 
 		this.restoreActiveConsumers();
@@ -74,28 +77,46 @@ export class DynamicConsumerService implements OnModuleInit, OnModuleDestroy {
 				await consumer.connect();
 				await consumer.subscribe({ topics: topics, fromBeginning: true });
 
-				// --- LOGIC NHẬN VÀ LƯU TIN NHẮN ---
-				await consumer.run({
-					eachMessage: async ({ topic, partition, message }) => {
-						const value = message.value ? message.value.toString() : "";
-						const offset = message.offset;
-
-						this.logger.debug(`[${instanceId}] Nhận tin: ${value}`);
-
-						// 3. GỌI HÀM LƯU DB NGAY TẠI ĐÂY
-						await this.saveMessageToDB(
-							instanceId,
-							groupId,
-							topic,
-							partition,
-							offset,
-							value
-						);
-					},
-				});
-
+				// Store consumer instance trước khi chạy
 				this.activeConsumers.set(instanceId, consumer);
 				await this.saveInstanceToDB(instanceId, groupId, topics, "active");
+
+				// --- LOGIC NHẬN VÀ LƯU TIN NHẮN (CHẠY BACKGROUND - KHÔNG AWAIT) ---
+				// Chạy background để API trả về ngay, consumer sẽ tiếp tục nhận message
+				consumer
+					.run({
+						eachMessage: async ({ topic, partition, message }) => {
+							const value = message.value ? message.value.toString() : "";
+							const offset = message.offset;
+
+							this.logger.debug(`[${instanceId}] Nhận tin: ${value}`);
+
+							// Lưu message vào DB
+							await this.saveMessageToDB(
+								instanceId,
+								groupId,
+								topic,
+								partition,
+								offset,
+								value
+							);
+
+							// Emit WebSocket event để hiện toast trên frontend
+							this.gateway.broadcastMessageReceived(`${instanceId}-${offset}`, {
+								consumerId: instanceId,
+								groupId,
+								topic,
+								partition,
+								offset,
+								value,
+								timestamp: new Date().toISOString(),
+							});
+						},
+					})
+					.catch((error) => {
+						this.logger.error(`Consumer ${instanceId} error:`, error);
+					});
+
 				results.push(instanceId);
 			} catch (error) {
 				this.logger.error(`Lỗi tạo instance ${instanceId}:`, error);

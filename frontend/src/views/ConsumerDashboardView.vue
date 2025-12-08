@@ -344,12 +344,17 @@ import { getConsumerStats, getConsumerLogs, getConsumerLogById } from "@/service
 import ConsumerList from "@/components/common/ConsumerList.vue";
 import SystemStatus from "@/components/common/SystemStatus.vue";
 import { io } from "socket.io-client";
+import { useToast } from "@/composables/useToast";
 
 export default {
   name: "ConsumerDashboardView",
   components: {
     ConsumerList,
     SystemStatus,
+  },
+  setup() {
+    const toast = useToast();
+    return { toast };
   },
   data() {
     return {
@@ -495,6 +500,10 @@ export default {
       // 1. Khi nhận được message mới từ Kafka
       this.socket.on("message-received", (data) => {
         console.log("📨 Message received:", data);
+        
+        // Hiện toast thông báo
+        this.toast.success(`📨 Đã nhận tin nhắn mới từ topic: ${data.topic}`);
+        
         // Refresh logs để lấy log mới
         this.fetchAllLogs();
         // Tăng totalMessages
@@ -945,10 +954,7 @@ export default {
     },
     handleConsumerCreated(data) {
       // Hiển thị thông báo ngay lập tức
-      this.showToast(
-        "success",
-        `Đang khởi tạo ${data.count || 1} consumers cho Group "${data.groupId || '...'}"`
-      );
+      console.log(`✅ Đang khởi tạo ${data.count || 1} consumers cho Group "${data.groupId || '...'}"`);
 
       // Đóng modal
       this.showAddModal = false;
@@ -969,7 +975,7 @@ export default {
 
         if (attempts >= maxAttempts) {
           clearInterval(intervalId);
-          this.showToast("info", "Hoàn tất quá trình khởi tạo. Kiểm tra danh sách.");
+          console.log("✅ Hoàn tất quá trình khởi tạo. Kiểm tra danh sách.");
         }
       }, 2500); // 2.5 giây refresh 1 lần
     },
