@@ -93,14 +93,27 @@ Lưu ý: cả backend và consumer cần Kafka hoạt động (có thể chạy 
 
 Repo có `docker-compose.yml` (dev) và `docker-compose.prod.yml` (production). Để chạy toàn bộ stack (Kafka + Zookeeper + service + frontend):
 
+### Development (Local)
+
 ```powershell
 docker-compose up --build
 ```
 
-Hoặc cho môi trường production:
+### Production (AWS EC2 với domain nhanit.id.vn)
 
-```powershell
+```bash
+# Chạy script tự động (khuyến nghị)
+bash setup-aws-ec2.sh
+
+# Hoặc chạy thủ công
 docker-compose -f docker-compose.prod.yml up -d --build
+```
+
+**📚 Hướng dẫn chi tiết deploy lên AWS:** Xem file [`AWS_DEPLOYMENT_GUIDE.md`](./AWS_DEPLOYMENT_GUIDE.md)
+
+**🔍 Kiểm tra cấu hình trước khi deploy:**
+```bash
+bash check-config.sh
 ```
 
 Các dịch vụ chính sẽ được cấu hình trong file compose. Kiểm tra logs bằng `docker-compose logs -f` hoặc `docker logs` cho container cụ thể.

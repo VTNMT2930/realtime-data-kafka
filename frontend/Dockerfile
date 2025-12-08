@@ -5,15 +5,15 @@ COPY package*.json ./
 RUN npm install
 COPY . .
 
-RUN npm run build
-
 # ✅ QUAN TRỌNG: Phải đặt đoạn này TRƯỚC lệnh build
 ARG VITE_PRODUCER_URL
 ARG VITE_CONSUMER_URL
 
 # Gán giá trị từ ARG sang ENV để Vite đọc được
-ENV VITE_PRODUCER_API_URL=$VITE_PRODUCER_URL
-ENV VITE_CONSUMER_API_URL=$VITE_CONSUMER_URL
+ENV VITE_PRODUCER_URL=$VITE_PRODUCER_URL
+ENV VITE_CONSUMER_URL=$VITE_CONSUMER_URL
+
+RUN npm run build
 
 # Production Stage (Dùng Nginx)
 FROM nginx:stable-alpine as production-stage
