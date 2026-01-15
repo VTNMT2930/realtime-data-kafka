@@ -8,6 +8,7 @@ import {
   getTopicDetail as getTopicDetailApi,
   getProducerLogs,
 } from "@/services/apiService";
+import { io } from "socket.io-client";
 
 // Định nghĩa store
 export const useKafkaStore = defineStore("kafka", () => {
@@ -17,8 +18,79 @@ export const useKafkaStore = defineStore("kafka", () => {
   const logs = ref([]); // Producer logs
   const loading = ref(false);
   const error = ref(null);
+  const socket = ref(null); // WebSocket connection
+  const currentTopic = ref(null); // Topic đang xem
 
   // === ACTIONS ===
+
+  // ✅ Khởi tạo WebSocket connection
+  function initWebSocket() {
+    if (socket.value) {
+      console.log("Store: WebSocket already connected");
+      return;
+    }
+
+    const producerUrl = import.meta.env.VITE_PRODUCER_URL || "http://localhost:3000";
+    console.log("Store: Connecting to WebSocket:", producerUrl);
+
+    socket.value = io(producerUrl, {
+      transports: ["websocket", "polling"],
+      reconnection: true,
+      reconnectionDelay: 1000,
+      reconnectionAttempts: 5,
+    });
+
+    socket.value.on("connect", () => {
+      console.log("Store: ✅ WebSocket connected");
+    });
+
+    socket.value.on("disconnect", (reason) => {
+      console.log("Store: ❌ WebSocket disconnected:", reason);
+    });
+
+    socket.value.on("connection-success", (data) => {
+      console.log("Store: 🎉 Connection success event received:", data);
+    });
+
+    socket.value.on("connect_error", (error) => {
+      console.error("Store: ❌ WebSocket connection error:", error);
+    });
+
+    // ✅ Lắng nghe event producer-log-updated (đúng event name từ gateway)
+    socket.value.on("producer-log-updated", async (data) => {
+      console.log("Store: 📡 Received producer-log-updated event:", data);
+
+      const { logId, log } = data;
+
+      // Nếu đang xem topic của log này → refresh messages
+      if (currentTopic.value && log.topic === currentTopic.value) {
+        console.log("Store: Auto-refreshing messages for topic:", currentTopic.value);
+        await fetchMessages(currentTopic.value);
+      }
+    });
+
+    // ✅ Lắng nghe event producer-log-created (đúng event name từ gateway)
+    socket.value.on("producer-log-created", async (data) => {
+      console.log("Store: 📡 Received producer-log-created event:", data);
+
+      const { log } = data;
+
+      // Nếu đang xem topic của log này → refresh messages
+      if (currentTopic.value && log.topic === currentTopic.value) {
+        console.log("Store: Auto-refreshing messages for new log:", currentTopic.value);
+        await fetchMessages(currentTopic.value);
+      }
+    });
+  }
+
+  // ✅ Ngắt kết nối WebSocket
+  function disconnectWebSocket() {
+    if (socket.value) {
+      socket.value.disconnect();
+      socket.value = null;
+      console.log("Store: WebSocket disconnected");
+    }
+  }
 
   // Lấy danh sách topic từ backend
   async function fetchTopics() {
@@ -126,28 +198,79 @@ export const useKafkaStore = defineStore("kafka", () => {
     }
   }
 
-  // Lấy messages cho 1 topic (từ logs)
+  // Lấy messages cho 1 topic (từ producer logs - đã có offset/partition)
   async function fetchMessages(topicName) {
     console.log("Store: Lấy messages cho topic:", topicName);
 
-    // Luôn fetch logs mới nhất từ backend
-    await fetchLogs();
+    // ✅ Lưu topic đang xem để WebSocket biết khi nào refresh
+    currentTopic.value = topicName;
 
-    // ✅ FILTER logs theo topic VÀ loại bỏ batch logs
+    // ✅ Fetch logs với filter topic để lấy đúng logs của topic này
+    loading.value = true;
+    error.value = null;
+    try {
+      console.log("Store: Đang lấy producer logs từ backend...");
+      const response = await getProducerLogs({
+        topic: topicName,
+        limit: 1000 // Lấy nhiều records để không bỏ sót
+      });
+      console.log("Store: Response từ API:", response);
+
+      // Backend trả về format: { success: true, data: [...], pagination: {...} }
+      if (response.success && response.data) {
+        logs.value = response.data;
+      } else {
+        logs.value = response; // Fallback nếu format khác
+      }
+
+      console.log("Store: Lấy logs thành công:", logs.value);
+    } catch (err) {
+      console.error("Store: Lỗi khi lấy logs:", err);
+      error.value = err.message;
+      logs.value = [];
+    } finally {
+      loading.value = false;
+    }
+
+    // ✅ FILTER: Chỉ lấy SINGLE messages hoặc FILE SUMMARY logs
     const topicLogs = logs.value.filter((log) => {
       // So sánh topic (case-insensitive)
       const matchTopic =
         log.topic && log.topic.toLowerCase() === topicName.toLowerCase();
 
-      // Loại bỏ batch logs (originalFileName bắt đầu với "Batch ")
-      const isNotBatchLog =
-        !log.originalFileName || !log.originalFileName.startsWith("Batch ");
+      if (!matchTopic) return false;
 
-      return matchTopic && isNotBatchLog;
+      // ✅ Nếu là SINGLE message → hiển thị
+      if (log.type === "SINGLE") return true;
+
+      // ✅ Nếu là FILE → chỉ hiển thị SUMMARY LOG (không hiển thị batch logs)
+      if (log.type === "FILE") {
+        // Summary log có originalFileName KHÔNG bắt đầu với "Batch "
+        // hoặc có structure { totalRecords, totalBatches, message }
+        if (log.originalFileName && log.originalFileName.startsWith("Batch ")) {
+          return false; // Loại bỏ batch logs
+        }
+
+        // Kiểm tra data có phải summary không
+        if (log.data) {
+          try {
+            const parsedData = JSON.parse(log.data);
+            // Summary log có totalRecords và message
+            return parsedData.totalRecords !== undefined && parsedData.message !== undefined;
+          } catch (e) {
+            // Không parse được → có thể là file log cũ
+            return true;
+          }
+        }
+
+        return true; // FILE log nhưng không phải batch
+      }
+
+      return false;
     });
 
     console.log(
-      `Store: Tìm thấy ${topicLogs.length} logs cho topic "${topicName}" (đã loại bỏ batch logs)`
+      `Store: Tìm thấy ${topicLogs.length} logs cho topic "${topicName}" (chỉ hiển thị single messages và file summaries)`
     );
     console.log("Store: Topic logs:", topicLogs);
 
@@ -161,14 +284,38 @@ export const useKafkaStore = defineStore("kafka", () => {
         parsedData = log.data;
       }
 
+      // ✅ LẤY OFFSET VÀ PARTITION từ log (đã được lưu từ Kafka response)
+      // Nếu là summary log (FILE không có offset) hoặc đang PROCESSING → hiển thị "-"
+      let actualOffset = log.offset || null;
+      let actualPartition = log.partition !== undefined && log.partition !== null
+        ? log.partition
+        : null;
+
+      // ✅ Nếu log đang PROCESSING hoặc PENDING → luôn hiển thị "-"
+      if (log.status === "PROCESSING" || log.status === "PENDING") {
+        actualOffset = "-";
+        actualPartition = "-";
+      }
+      // Nếu không có offset/partition (summary log) → dùng "-"
+      else if (!actualOffset || actualPartition === null) {
+        // Kiểm tra xem có phải summary log không
+        if (parsedData && parsedData.totalRecords !== undefined && parsedData.message !== undefined) {
+          actualOffset = "-";
+          actualPartition = "-";
+        } else {
+          // Không phải summary, dùng fallback
+          actualOffset = actualOffset || log.id || index;
+          actualPartition = actualPartition !== null ? actualPartition : 0;
+        }
+      }
+
       return {
-        offset: log.id || index,
-        partition: 0,
+        offset: actualOffset,
+        partition: actualPartition,
         startTime: new Date(log.createdAt).toLocaleString("vi-VN"),
         endTime: new Date(log.updatedAt).toLocaleString("vi-VN"),
-        duration: `${
-          new Date(log.updatedAt).getTime() - new Date(log.createdAt).getTime()
-        } ms`,
+        duration: `${new Date(log.updatedAt).getTime() - new Date(log.createdAt).getTime()
+          } ms`,
         status: getStatusText(log.status),
         message: formatMessageData(log, parsedData),
       };
@@ -313,7 +460,12 @@ export const useKafkaStore = defineStore("kafka", () => {
 
   function getStatusText(status) {
     const statusMap = {
+      // Producer log statuses
       PENDING: "Đang xử lý",
+      PROCESSING: "Đang xử lý",
+      COMPLETED: "Thành công",
+      FAILED: "Thất bại",
+      // Consumer log statuses
       SENT: "Đang xử lý",
       CONSUMED: "Thành công",
       CONSUME_FAILED: "Thất bại",
@@ -362,5 +514,10 @@ export const useKafkaStore = defineStore("kafka", () => {
     deleteTopic,
     updateTopic,
     getTopicDetail,
+    // WebSocket
+    initWebSocket,
+    disconnectWebSocket,
+    // Helpers
+    formatStatus: getStatusText,
   };
 });

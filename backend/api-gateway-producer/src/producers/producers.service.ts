@@ -4,7 +4,7 @@ import { ClientKafka } from '@nestjs/microservices';
 import { lastValueFrom } from 'rxjs';
 import { CreateTransactionDto } from './dto/create-transaction.dto';
 import { Processor, Process } from '@nestjs/bull';
-import { Job } from 'bullmq';
+import * as Bull from 'bull'; // ✅ FIX: Import namespace
 import * as fs from 'fs';
 import csv = require('csv-parser');
 import { InjectRepository } from '@nestjs/typeorm';
@@ -15,10 +15,13 @@ import {
   LogType,
 } from './entities/producer-log.entity';
 import { ProducersGateway } from './producers.gateway';
+import { Producer } from 'kafkajs'; // ✅ Import Producer type
 
 @Processor('Producers')
 @Injectable()
 export class ProducersService {
+  private kafkaProducer: Producer; // ✅ Native Kafka producer
+
   constructor(
     @Inject('KAFKA_SERVICE') private readonly kafkaClient: ClientKafka,
     @InjectRepository(ProducerLog)
@@ -27,8 +30,29 @@ export class ProducersService {
   ) {}
 
   async onModuleInit() {
-    await this.kafkaClient.connect();
-    console.log('Kafka Client đã kết nối!');
+    try {
+      await this.kafkaClient.connect();
+      // ✅ Lấy native Kafka producer từ ClientKafka
+      this.kafkaProducer = (this.kafkaClient as any).client.producer();
+      await this.kafkaProducer.connect();
+      console.log('✅ Kafka Producer Client đã kết nối!');
+    } catch (error) {
+      console.error('❌ Lỗi khi kết nối Kafka:', error.message);
+      // Retry after 5 seconds
+      setTimeout(() => this.onModuleInit(), 5000);
+    }
+  }
+
+  async onModuleDestroy() {
+    try {
+      if (this.kafkaProducer) {
+        await this.kafkaProducer.disconnect();
+      }
+      await this.kafkaClient.close();
+      console.log('✅ Kafka Producer Client đã ngắt kết nối!');
+    } catch (error) {
+      console.error('❌ Lỗi khi ngắt kết nối Kafka:', error.message);
+    }
   }
 
   // --- HÀM 'CREATE' (SEND SINGLE) ---
@@ -59,14 +83,32 @@ export class ProducersService {
         logId: savedLog.id,
         data: createTransactionDto,
       };
-      await lastValueFrom(this.kafkaClient.emit(topic, payload));
+
+      // ✅ Dùng native Kafka producer để lấy RecordMetadata
+      const recordMetadata = await this.kafkaProducer.send({
+        topic,
+        messages: [
+          {
+            key: savedLog.id,
+            value: JSON.stringify(payload),
+          },
+        ],
+      });
+
+      // ✅ Lấy offset và partition từ response
+      const metadata = recordMetadata[0];
+      const partition = metadata?.partition ?? 0;
+      const baseOffset = metadata?.baseOffset ?? '0';
+
       console.log(
-        `Service: Đã gửi message (logId: ${savedLog.id}) thành công tới topic "${topic}".`,
+        `Service: Đã gửi message (logId: ${savedLog.id}) thành công tới topic "${topic}" - Partition: ${partition}, Offset: ${baseOffset}.`,
       );
 
-      // Cập nhật COMPLETED
+      // Cập nhật COMPLETED + offset/partition
       await this.logRepository.update(savedLog.id, {
         status: LogStatus.COMPLETED,
+        offset: baseOffset.toString(), // Kafka offset là bigint, chuyển sang string
+        partition: partition,
       });
 
       // ✅ Broadcast WebSocket event - log updated
@@ -80,6 +122,8 @@ export class ProducersService {
         message: `Dữ liệu đã được gửi đến Kafka topic: ${topic}!`,
         logId: savedLog.id,
         topic: topic,
+        offset: baseOffset.toString(),
+        partition: partition,
       };
     } catch (error) {
       console.error('Service: Lỗi khi gửi message đơn lẻ:', error.message);
@@ -102,7 +146,7 @@ export class ProducersService {
 
   // --- HÀM WORKER (UPLOAD CSV) ---
   @Process('process-csv-job')
-  async processCsvJob(job: Job<any>) {
+  async processCsvJob(job: Bull.Job<any>) {
     const { filePath, logId, topic = 'transactions_topic' } = job.data; // ✅ Nhận topic từ job
     console.log(
       `[Worker] Bắt đầu xử lý file: ${filePath} (Log ID: ${logId}, Topic: ${topic})`,
@@ -149,7 +193,32 @@ export class ProducersService {
             logId: savedBatchLog.id, // ✅ Dùng logId của batch
             data: [...batch],
           };
-          await lastValueFrom(this.kafkaClient.emit(topic, payload));
+
+          // ✅ Gửi batch và lấy offset/partition
+          const recordMetadata = await this.kafkaProducer.send({
+            topic,
+            messages: [
+              {
+                key: savedBatchLog.id,
+                value: JSON.stringify(payload),
+              },
+            ],
+          });
+
+          const metadata = recordMetadata[0];
+          const partition = metadata?.partition ?? 0;
+          const baseOffset = metadata?.baseOffset ?? '0';
+
+          // ✅ Cập nhật offset/partition cho batch log
+          await this.logRepository.update(savedBatchLog.id, {
+            offset: baseOffset.toString(),
+            partition: partition,
+          });
+
+          console.log(
+            `[Worker] ✅ Batch ${batchNumber} sent - Partition: ${partition}, Offset: ${baseOffset}`,
+          );
+
           batch.length = 0; // Xóa batch sau khi gửi
         }
       } // ĐÓNG VÒNG LẶP for await
@@ -175,18 +244,42 @@ export class ProducersService {
           logId: savedBatchLog.id, // ✅ Dùng logId của batch
           data: [...batch],
         };
-        await lastValueFrom(this.kafkaClient.emit(topic, finalPayload));
+
+        // ✅ Gửi batch cuối và lấy offset/partition
+        const recordMetadata = await this.kafkaProducer.send({
+          topic,
+          messages: [
+            {
+              key: savedBatchLog.id,
+              value: JSON.stringify(finalPayload),
+            },
+          ],
+        });
+
+        const metadata = recordMetadata[0];
+        const partition = metadata?.partition ?? 0;
+        const baseOffset = metadata?.baseOffset ?? '0';
+
+        // ✅ Cập nhật offset/partition cho batch log cuối
+        await this.logRepository.update(savedBatchLog.id, {
+          offset: baseOffset.toString(),
+          partition: partition,
+        });
+
+        console.log(
+          `[Worker] ✅ Final batch ${batchNumber} sent - Partition: ${partition}, Offset: ${baseOffset}`,
+        );
       }
 
       console.log(
         `[Worker] Đã xử lý VÀ GỬI KAFKA xong file CSV tới topic "${topic}": ${filePath} - Total: ${totalRecords} records in ${batchNumber} batches`,
       );
 
-      // 4. ✅ CẬP NHẬT LOG CHÍNH với tóm tắt (chỉ update, không tạo log mới)
+      // 4. ✅ CẬP NHẬT LOG CHÍNH với tóm tắt (không lưu offset/partition)
       const summaryData = {
         totalRecords,
         totalBatches: batchNumber,
-        message: `Đã gửi thành công ${totalRecords} records trong ${batchNumber} batches tới Kafka topic: ${topic}`,
+        message: `Đã gửi thành công ${totalRecords} records tới Kafka topic: ${topic}`,
         topic: topic,
       };
 
@@ -201,6 +294,17 @@ export class ProducersService {
         summaryData,
       );
 
+      // ✅ Broadcast WebSocket event - log completed
+      const updatedLog = await this.logRepository.findOne({
+        where: { id: logId },
+      });
+      if (updatedLog) {
+        this.producersGateway.broadcastLogUpdated(logId, updatedLog);
+        console.log(
+          `[Worker] ✅ Đã broadcast log completed cho logId: ${logId}`,
+        );
+      }
+
       return {
         success: true,
         totalRecords,
@@ -214,6 +318,15 @@ export class ProducersService {
         status: LogStatus.FAILED,
         errorMessage: error.message,
       });
+
+      // ✅ Broadcast WebSocket event - log failed
+      const failedLog = await this.logRepository.findOne({
+        where: { id: logId },
+      });
+      if (failedLog) {
+        this.producersGateway.broadcastLogUpdated(logId, failedLog);
+        console.log(`[Worker] ✅ Đã broadcast log failed cho logId: ${logId}`);
+      }
     } finally {
       // 6. Luôn luôn xóa file tạm
       try {
@@ -411,6 +524,7 @@ export class ProducersService {
     try {
       const queryBuilder = this.logRepository
         .createQueryBuilder('log')
+        .where('log.isDeleted = :isDeleted', { isDeleted: false }) // ✅ Filter out deleted logs
         .orderBy('log.createdAt', 'DESC')
         .skip((page - 1) * limit)
         .take(limit);

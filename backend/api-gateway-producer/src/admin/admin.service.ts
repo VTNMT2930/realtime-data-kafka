@@ -6,6 +6,7 @@ import {
   OnModuleInit,
   OnModuleDestroy,
   Logger,
+  forwardRef,
 } from '@nestjs/common';
 import { ClientKafka } from '@nestjs/microservices';
 import { Admin } from 'kafkajs'; // Import 'Admin' từ kafkajs
@@ -14,6 +15,10 @@ import { promisify } from 'util';
 import axios from 'axios';
 import { io, Socket } from 'socket.io-client';
 import { CreateConsumerDto } from './dto/create-consumer.dto';
+import { ProducersService } from '../producers/producers.service';
+import { InjectRepository } from '@nestjs/typeorm';
+import { Repository } from 'typeorm';
+import { ProducerLog } from '../producers/entities/producer-log.entity';
 // Chuyển exec sang Promise để dùng await
 const execAsync = promisify(exec);
 @Injectable()
@@ -27,6 +32,10 @@ export class AdminService implements OnModuleInit, OnModuleDestroy {
 
   constructor(
     @Inject('KAFKA_SERVICE') private readonly kafkaClient: ClientKafka,
+    @Inject(forwardRef(() => ProducersService))
+    private readonly producersService: ProducersService,
+    @InjectRepository(ProducerLog)
+    private readonly producerLogRepository: Repository<ProducerLog>,
   ) {}
 
   // Lấy admin client khi module khởi động
@@ -245,6 +254,20 @@ export class AdminService implements OnModuleInit, OnModuleDestroy {
       // 3. Thực hiện xóa
       await this.kafkaAdmin.deleteTopics({ topics: [topicName] });
 
+      // ✅ 4. Soft delete tất cả producer logs liên quan đến topic này
+      const softDeleteResult = await this.producerLogRepository.update(
+        { topic: topicName, isDeleted: false },
+        {
+          isDeleted: true,
+          deletedAt: new Date(),
+          deletedReason: `Topic "${topicName}" deleted`,
+        },
+      );
+
+      this.logger.log(
+        `Soft deleted ${softDeleteResult.affected} producer logs for topic: ${topicName}`,
+      );
+
       return {
         status: 'success',
         message: 'Topic đã được xóa thành công.',
@@ -357,27 +380,20 @@ export class AdminService implements OnModuleInit, OnModuleDestroy {
   // ==================================================================
   // PHẦN 2: STATISTICS
   // ==================================================================
-  // ✅ Helper: Lấy producer statistics theo topic
+  // ✅ Helper: Lấy producer statistics theo topic (gọi trực tiếp service thay vì HTTP)
   private async getProducerStatsByTopic(): Promise<
     Record<string, { totalRecords: number; batches: number }>
   > {
-    const producerServiceUrl =
-      process.env.PRODUCER_SERVICE_URL || 'http://3.107.102.127:3000';
     try {
-      // Query producer-log database để lấy statistics
-      const response = await axios.get(
-        `${producerServiceUrl}/api/producers/statistics`,
-        {
-          timeout: 5000,
-        },
-      );
+      // ✅ Gọi trực tiếp ProducersService.getStatistics() thay vì HTTP request
+      const statsResponse = await this.producersService.getStatistics();
 
-      if (response.data.success && response.data.byTopic) {
+      if (statsResponse.success && statsResponse.byTopic) {
         const stats: Record<string, { totalRecords: number; batches: number }> =
           {};
 
-        // response.data.byTopic is already an array with topic breakdown
-        response.data.byTopic.forEach((topicStat: any) => {
+        // statsResponse.byTopic là array với topic breakdown
+        statsResponse.byTopic.forEach((topicStat: any) => {
           stats[topicStat.topic] = {
             totalRecords: topicStat.totalRecords || 0,
             batches: topicStat.totalBatches || 0,

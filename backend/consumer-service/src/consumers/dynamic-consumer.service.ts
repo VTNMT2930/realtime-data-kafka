@@ -45,8 +45,134 @@ export class DynamicConsumerService implements OnModuleInit, OnModuleDestroy {
 
 	private async restoreActiveConsumers() {
 		try {
-			// Logic restore nếu cần (để trống tạm thời theo yêu cầu giữ nguyên logic cũ)
-		} catch (error) {}
+			this.logger.log("🔄 Đang restore các consumer đã tồn tại từ database...");
+
+			// Lấy tất cả consumer instances có status = 'active' và chưa bị xóa
+			const activeInstances = await this.instanceRepo.find({
+				where: {
+					status: "active",
+					isDeleted: false,
+				},
+			});
+
+			if (activeInstances.length === 0) {
+				this.logger.log("ℹ️ Không có consumer nào cần restore.");
+				return;
+			}
+
+			this.logger.log(
+				`📋 Tìm thấy ${activeInstances.length} consumer(s) cần restore.`
+			);
+
+			// Restore từng consumer
+			for (const instance of activeInstances) {
+				try {
+					const { id, groupId, topics: topicsStr } = instance;
+
+					// Parse topics từ string "topic1,topic2" thành array
+					const topics = topicsStr
+						? topicsStr.split(",").map((t) => t.trim())
+						: [];
+
+					if (!groupId || topics.length === 0) {
+						this.logger.warn(
+							`⚠️ Instance ${id} thiếu groupId hoặc topics, bỏ qua.`
+						);
+						continue;
+					}
+
+					this.logger.log(
+						`🔧 Đang restore consumer: ${id} | Group: ${groupId} | Topics: ${topics.join(
+							", "
+						)}`
+					);
+
+					// Tạo consumer với config giống như createAdvancedConsumer
+					const consumer = this.kafka.consumer({
+						groupId: groupId,
+						sessionTimeout: 30000,
+						heartbeatInterval: 3000,
+						retry: {
+							initialRetryTime: 100,
+							retries: 8,
+						},
+					});
+
+					await consumer.connect();
+					this.logger.log(`✅ Consumer ${id} đã kết nối Kafka`);
+
+					await consumer.subscribe({ topics: topics, fromBeginning: true });
+					this.logger.log(
+						`✅ Consumer ${id} đã subscribe topics: ${topics.join(", ")}`
+					);
+
+					// Lưu vào Map
+					this.activeConsumers.set(id, consumer);
+
+					// Bắt đầu lắng nghe messages (background)
+					consumer
+						.run({
+							autoCommit: true,
+							autoCommitInterval: 5000,
+							eachMessage: async ({ topic, partition, message }) => {
+								const value = message.value ? message.value.toString() : "";
+								const offset = message.offset;
+
+								this.logger.log(
+									`[${id}] 📨 Nhận message từ topic "${topic}" partition ${partition} offset ${offset}`
+								);
+
+								// Lưu message vào DB
+								await this.saveMessageToDB(
+									id,
+									groupId,
+									topic,
+									partition,
+									offset,
+									value
+								);
+
+								// Emit WebSocket event
+								this.gateway.broadcastMessageReceived(`${id}-${offset}`, {
+									consumerId: id,
+									groupId,
+									topic,
+									partition,
+									offset,
+									value,
+									timestamp: new Date().toISOString(),
+								});
+							},
+						})
+						.catch((error) => {
+							this.logger.error(`❌ Consumer ${id} error:`, error);
+							// Cập nhật status = error trong DB
+							this.instanceRepo.update(id, { status: "error" });
+						});
+
+					this.logger.log(`✅ Consumer ${id} đã được restore và đang chạy!`);
+				} catch (error) {
+					this.logger.error(
+						`❌ Lỗi khi restore consumer ${instance.id}:`,
+						error.message
+					);
+					// Cập nhật status = error
+					await this.instanceRepo.update(instance.id, { status: "error" });
+				}
+			}
+
+			this.logger.log(
+				`✅ Hoàn tất restore ${activeInstances.length} consumer(s)!`
+			);
+		} catch (error) {
+			this.logger.error("❌ Lỗi khi restore consumers:", error);
+		}
+	}
+
+	// ✅ Public method để force restore (có thể gọi từ controller)
+	async forceRestoreConsumers() {
+		this.logger.log("🔄 Force restore consumers được gọi từ API...");
+		await this.restoreActiveConsumers();
 	}
 
 	/**
@@ -73,7 +199,18 @@ export class DynamicConsumerService implements OnModuleInit, OnModuleDestroy {
 			}
 
 			try {
-				const consumer = this.kafka.consumer({ groupId: groupId });
+				// ✅ Thêm config để consumer ổn định hơn
+				const consumer = this.kafka.consumer({
+					groupId: groupId,
+					// Tăng timeout để tránh rebalance
+					sessionTimeout: 30000,
+					heartbeatInterval: 3000,
+					// Retry settings
+					retry: {
+						initialRetryTime: 100,
+						retries: 8,
+					},
+				});
 				await consumer.connect();
 				await consumer.subscribe({ topics: topics, fromBeginning: true });
 
@@ -85,11 +222,16 @@ export class DynamicConsumerService implements OnModuleInit, OnModuleDestroy {
 				// Chạy background để API trả về ngay, consumer sẽ tiếp tục nhận message
 				consumer
 					.run({
+						// ✅ Cấu hình autoCommit để tự động commit offset sau khi xử lý
+						autoCommit: true,
+						autoCommitInterval: 5000,
 						eachMessage: async ({ topic, partition, message }) => {
 							const value = message.value ? message.value.toString() : "";
 							const offset = message.offset;
 
-							this.logger.debug(`[${instanceId}] Nhận tin: ${value}`);
+							this.logger.log(
+								`[${instanceId}] 📨 Nhận message từ topic "${topic}" partition ${partition} offset ${offset}`
+							);
 
 							// Lưu message vào DB
 							await this.saveMessageToDB(

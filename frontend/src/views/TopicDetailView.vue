@@ -395,9 +395,9 @@
               <td class="px-6 py-4 whitespace-nowrap">
                 <span
                   class="px-3 py-1 text-xs font-medium rounded-full"
-                  :class="getLogStatusClass(log.status)"
+                  :class="getStatusClass(kafkaStore.formatStatus(log.status))"
                 >
-                  {{ log.status }}
+                  {{ kafkaStore.formatStatus(log.status) }}
                 </span>
               </td>
               <td class="px-6 py-4 text-sm text-gray-500 whitespace-nowrap">
@@ -625,6 +625,9 @@ const refreshLogs = async () => {
 
 // Fetch messages when the component mounts
 onMounted(async () => {
+  // ✅ Khởi tạo WebSocket connection
+  kafkaStore.initWebSocket();
+
   kafkaStore.fetchMessages(topicName.value);
 
   // Also fetch logs when component mounts
@@ -653,6 +656,8 @@ onUnmounted(() => {
   if (logsIntervalId) {
     clearInterval(logsIntervalId);
   }
+  // ✅ Ngắt kết nối WebSocket khi component unmount
+  kafkaStore.disconnectWebSocket();
 });
 
 // Handle success after sending message
@@ -711,25 +716,16 @@ const messageHeaders = [
   "Thời gian bắt đầu",
   "Thời gian kết thúc",
   "Tổng thời gian",
-  "Status",
-  "Message",
+  "Trạng thái",
+  "Tin nhắn",
 ];
 
+// ✅ Hàm duy nhất để lấy CSS class theo trạng thái tiếng Việt
 const getStatusClass = (status) => {
   if (status === "Thành công") return "bg-green-100 text-green-800";
   if (status === "Đang xử lý") return "bg-blue-100 text-blue-800";
   if (status === "Thất bại") return "bg-red-100 text-red-800";
   return "bg-gray-100 text-gray-800";
-};
-
-const getLogStatusClass = (status) => {
-  const classes = {
-    PENDING: "bg-yellow-100 text-yellow-800",
-    SENT: "bg-blue-100 text-blue-800",
-    CONSUMED: "bg-green-100 text-green-800",
-    CONSUME_FAILED: "bg-red-100 text-red-800",
-  };
-  return classes[status] || "bg-gray-100 text-gray-800";
 };
 
 const formatLogDate = (dateString) => {

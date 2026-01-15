@@ -533,7 +533,9 @@ export class ConsumersService {
 		status?: string
 	) {
 		try {
-			const query = this.consumerLogRepository.createQueryBuilder("log");
+			const query = this.consumerLogRepository
+				.createQueryBuilder("log")
+				.where("log.isDeleted = :isDeleted", { isDeleted: false }); // ✅ Filter out deleted logs
 
 			// Filter theo consumerId
 			if (consumerId) {
@@ -1082,7 +1084,23 @@ export class ConsumersService {
 
 			// ✅ BƯỚC 6: Đợi một chút để đảm bảo process đã stop
 			console.log(`[Consumer] ⏳ Waiting for cleanup...`);
-			await new Promise((resolve) => setTimeout(resolve, 2000)); // ✅ BƯỚC 6: Xóa consumer khỏi database
+			await new Promise((resolve) => setTimeout(resolve, 2000));
+
+			// ✅ BƯỚC 7: Soft delete tất cả consumer logs liên quan đến consumer này
+			const softDeleteResult = await this.consumerLogRepository.update(
+				{ consumerId: consumerId, isDeleted: false },
+				{
+					isDeleted: true,
+					deletedAt: new Date(),
+					deletedReason: `Consumer "${consumerId}" deleted`,
+				}
+			);
+
+			console.log(
+				`[Consumer] 📝 Soft deleted ${softDeleteResult.affected} consumer logs for consumer: ${consumerId}`
+			);
+
+			// ✅ BƯỚC 8: Xóa consumer khỏi database
 			const result = await this.consumerInstanceRepository.delete({
 				id: consumerId,
 			});

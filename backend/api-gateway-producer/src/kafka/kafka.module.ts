@@ -11,10 +11,27 @@ import { ClientsModule, Transport } from '@nestjs/microservices';
         options: {
           client: {
             clientId: 'producer',
-            brokers: [process.env.KAFKA_BROKER ||'localhost:9092'], // Địa chỉ Kafka đang chạy từ Docker
+            brokers: [process.env.KAFKA_BROKER || 'localhost:9092'],
+            // ✅ Thêm retry logic
+            retry: {
+              initialRetryTime: 100,
+              retries: 8,
+            },
+            // ✅ Timeout settings
+            connectionTimeout: 10000,
+            requestTimeout: 30000,
           },
           producer: {
             allowAutoTopicCreation: true,
+            // ✅ Thêm idempotent để tránh duplicate messages
+            idempotent: false,
+            // ✅ Max in-flight requests
+            maxInFlightRequests: 5,
+            // ✅ Retry settings
+            retry: {
+              initialRetryTime: 100,
+              retries: 5,
+            },
           },
         },
       },

@@ -48,6 +48,13 @@ export class ProducerLog {
   @Column({ nullable: true })
   topic: string;
 
+  // ✅ Kafka metadata - offset và partition từ Kafka response
+  @Column({ type: 'bigint', nullable: true })
+  offset: string; // Kafka offset (bigint saved as string)
+
+  @Column({ type: 'int', nullable: true })
+  partition: number; // Kafka partition number
+
   // Các trường này chủ yếu dùng cho 'FILE'
   // 'nullable: true' -> cho phép giá trị bị rỗng (vì message SINGLE không có file)
   @Column({ nullable: true })
@@ -62,6 +69,16 @@ export class ProducerLog {
   // Dùng khi status là 'FAILED'
   @Column({ type: 'text', nullable: true })
   errorMessage: string;
+
+  // ✅ Soft Delete columns
+  @Column({ type: 'boolean', default: false })
+  isDeleted: boolean;
+
+  @Column({ type: 'timestamp', nullable: true })
+  deletedAt: Date;
+
+  @Column({ type: 'varchar', length: 500, nullable: true })
+  deletedReason: string; // Lý do xóa (e.g., "Topic deleted", "Manual deletion")
 
   @CreateDateColumn()
   createdAt: Date; // Tự động điền ngày giờ tạo

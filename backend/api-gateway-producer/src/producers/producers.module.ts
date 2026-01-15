@@ -17,6 +17,6 @@ import { ProducerLog } from './entities/producer-log.entity';
   ],
   controllers: [ProducersController],
   providers: [ProducersService, ProducersGateway],
-  exports: [ProducersGateway],
+  exports: [ProducersGateway, ProducersService], // ✅ Export ProducersService để AdminModule sử dụng
 })
 export class ProducersModule {}

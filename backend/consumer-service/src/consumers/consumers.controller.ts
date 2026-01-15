@@ -132,4 +132,21 @@ export class ConsumersController {
 			body.count
 		);
 	}
+
+	// ✅ API để force restore tất cả consumers từ database (hữu ích khi debug)
+	@Post("restore")
+	async restoreConsumers() {
+		try {
+			await this.dynamicService.forceRestoreConsumers();
+			return {
+				success: true,
+				message: "Đã restore tất cả consumers từ database",
+			};
+		} catch (error) {
+			return {
+				success: false,
+				message: error.message,
+			};
+		}
+	}
 }

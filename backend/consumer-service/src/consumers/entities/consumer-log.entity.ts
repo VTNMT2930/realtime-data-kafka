@@ -1,64 +1,73 @@
 // consumer-service/src/consumers/consumer-log.entity.ts
 import {
-  Entity,
-  Column,
-  PrimaryGeneratedColumn,
-  CreateDateColumn,
-  UpdateDateColumn,
+	Entity,
+	Column,
+	PrimaryGeneratedColumn,
+	CreateDateColumn,
+	UpdateDateColumn,
 } from "typeorm";
 
 // Các trạng thái dành riêng cho Consumer
 export enum ConsumerLogStatus {
-  RECEIVED = "RECEIVED", // Đã nhận từ Kafka, đang chờ xử lý
-  PROCESSING = "PROCESSING", // Đang xử lý
-  PROCESSED = "PROCESSED", // Xử lý thành công
-  FAILED = "FAILED", // Xử lý thất bại
+	RECEIVED = "RECEIVED", // Đã nhận từ Kafka, đang chờ xử lý
+	PROCESSING = "PROCESSING", // Đang xử lý
+	PROCESSED = "PROCESSED", // Xử lý thành công
+	FAILED = "FAILED", // Xử lý thất bại
 }
 
 @Entity("consumer_logs") // Tên của bảng trong database
 export class ConsumerLog {
-  @PrimaryGeneratedColumn("uuid")
-  id: string;
+	@PrimaryGeneratedColumn("uuid")
+	id: string;
 
-  @Column()
-  originalLogId: string; // ID của log gốc từ producer
+	@Column()
+	originalLogId: string; // ID của log gốc từ producer
 
-  // ✅ THÊM: Kafka metadata
-  @Column({ type: "varchar", length: 255, nullable: true })
-  topic: string; // Topic name
+	// ✅ THÊM: Kafka metadata
+	@Column({ type: "varchar", length: 255, nullable: true })
+	topic: string; // Topic name
 
-  @Column({ type: "int", nullable: true })
-  partition: number; // Partition number
+	@Column({ type: "int", nullable: true })
+	partition: number; // Partition number
 
-  @Column({ type: "varchar", length: 50, nullable: true })
-  offset: string; // Message offset
+	@Column({ type: "varchar", length: 50, nullable: true })
+	offset: string; // Message offset
 
-  @Column({
-    type: "enum",
-    enum: ConsumerLogStatus,
-    default: ConsumerLogStatus.RECEIVED,
-  })
-  status: ConsumerLogStatus;
+	@Column({
+		type: "enum",
+		enum: ConsumerLogStatus,
+		default: ConsumerLogStatus.RECEIVED,
+	})
+	status: ConsumerLogStatus;
 
-  // ✅ Đổi từ 'simple-json' sang 'text' để lưu JSON string
-  @Column({ type: "text" })
-  data: string;
+	// ✅ Đổi từ 'simple-json' sang 'text' để lưu JSON string
+	@Column({ type: "text" })
+	data: string;
 
-  // ID của consumer instance đã xử lý message này
-  @Column({ type: "varchar", length: 255, nullable: true })
+	// ID của consumer instance đã xử lý message này
+	@Column({ type: "varchar", length: 255, nullable: true })
+	consumerId: string;
+	// Cột Group ID
+	@Column({ type: "varchar", length: 255, nullable: true })
+	groupId: string;
 
-  consumerId: string;
-// Cột Group ID
-  @Column({ type: "varchar", length: 255, nullable: true })
-  groupId: string;
+	// Dùng khi status là 'FAILED'
+	@Column({ type: "text", nullable: true })
+	errorMessage: string;
 
-  // Dùng khi status là 'FAILED'
-  @Column({ type: "text", nullable: true })
-  errorMessage: string;
+	// ✅ Soft Delete columns
+	@Column({ type: "boolean", default: false })
+	isDeleted: boolean;
 
-  @CreateDateColumn()
-  createdAt: Date;
+	@Column({ type: "timestamp", nullable: true })
+	deletedAt: Date;
 
-  @UpdateDateColumn()
-  updatedAt: Date;
+	@Column({ type: "varchar", length: 500, nullable: true })
+	deletedReason: string; // Lý do xóa (e.g., "Consumer stopped", "Manual deletion")
+
+	@CreateDateColumn()
+	createdAt: Date;
+
+	@UpdateDateColumn()
+	updatedAt: Date;
 }

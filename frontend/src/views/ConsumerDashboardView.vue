@@ -209,6 +209,78 @@
           Hiển thị {{ allLogs.length }} / {{ pagination.total }} logs
           (Trang {{ pagination.page }} / {{ pagination.totalPages }})
         </div>
+
+        <!-- Pagination Controls -->
+        <div v-if="pagination && pagination.totalPages > 1" class="mt-4 flex items-center justify-center">
+          <nav class="flex items-center space-x-2">
+            <!-- Previous Button -->
+            <button
+              @click="goToPage(currentPage - 1)"
+              :disabled="currentPage === 1"
+              :class="[
+                'flex items-center justify-center w-10 h-10 rounded-lg border transition-colors',
+                currentPage === 1
+                  ? 'border-gray-200 text-gray-300 cursor-not-allowed'
+                  : 'border-gray-300 text-gray-700 hover:bg-gray-50',
+              ]"
+            >
+              <svg
+                class="w-5 h-5"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  stroke-width="2"
+                  d="M15 19l-7-7 7-7"
+                />
+              </svg>
+            </button>
+
+            <!-- Page Numbers -->
+            <button
+              v-for="page in visiblePages"
+              :key="page"
+              @click="goToPage(page)"
+              :class="[
+                'flex items-center justify-center w-10 h-10 rounded-lg text-sm font-medium transition-colors',
+                page === currentPage
+                  ? 'bg-green-600 text-white'
+                  : 'border border-gray-300 text-gray-700 hover:bg-gray-50',
+              ]"
+            >
+              {{ page }}
+            </button>
+
+            <!-- Next Button -->
+            <button
+              @click="goToPage(currentPage + 1)"
+              :disabled="currentPage === pagination.totalPages"
+              :class="[
+                'flex items-center justify-center w-10 h-10 rounded-lg border transition-colors',
+                currentPage === pagination.totalPages
+                  ? 'border-gray-200 text-gray-300 cursor-not-allowed'
+                  : 'border-gray-300 text-gray-700 hover:bg-gray-50',
+              ]"
+            >
+              <svg
+                class="w-5 h-5"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  stroke-width="2"
+                  d="M9 5l7 7-7 7"
+                />
+              </svg>
+            </button>
+          </nav>
+        </div>
       </div>
 
       <!-- Log Detail Modal -->
@@ -368,6 +440,8 @@ export default {
       },
       allLogs: [],
       pagination: null,
+      currentPage: 1,
+      itemsPerPage: 50,
       filterStatus: '',
       searchId: '',
       searching: false,
@@ -417,6 +491,45 @@ export default {
             : 0,
         partitions: topic.partitions.size,
       }));
+    },
+    // ✅ Visible pages for pagination (show max 5 pages)
+    visiblePages() {
+      if (!this.pagination) return [];
+      
+      const total = this.pagination.totalPages;
+      const current = this.currentPage;
+      const pages = [];
+
+      if (total <= 5) {
+        // Show all pages if total is 5 or less
+        for (let i = 1; i <= total; i++) {
+          pages.push(i);
+        }
+      } else {
+        // Show current page and 2 pages before/after
+        let start = Math.max(1, current - 2);
+        let end = Math.min(total, current + 2);
+
+        // Adjust if near the beginning or end
+        if (current <= 3) {
+          end = 5;
+        } else if (current >= total - 2) {
+          start = total - 4;
+        }
+
+        for (let i = start; i <= end; i++) {
+          pages.push(i);
+        }
+      }
+
+      return pages;
+    },
+  },
+  watch: {
+    // Reset to page 1 when filter changes
+    filterStatus() {
+      this.currentPage = 1;
+      this.fetchAllLogs();
     },
   },
   async mounted() {
@@ -854,8 +967,8 @@ export default {
       this.loadingLogs = true;
       try {
         const params = {
-          page: 1,
-          limit: 50,
+          page: this.currentPage,
+          limit: this.itemsPerPage,
         };
         if (this.filterStatus) {
           params.status = this.filterStatus;
@@ -871,6 +984,14 @@ export default {
         console.error("Error fetching logs:", error);
       } finally {
         this.loadingLogs = false;
+      }
+    },
+
+    // ✅ Go to specific page
+    goToPage(page) {
+      if (page >= 1 && page <= this.pagination.totalPages) {
+        this.currentPage = page;
+        this.fetchAllLogs();
       }
     },
 

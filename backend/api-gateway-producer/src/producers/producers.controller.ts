@@ -10,7 +10,7 @@ import {
   LogStatus,
 } from './entities/producer-log.entity';
 import { InjectQueue } from '@nestjs/bull';
-import { Queue } from 'bullmq';
+import * as Bull from 'bull'; // ✅ FIX: Import namespace
 import { Repository } from 'typeorm';
 import { InjectRepository } from '@nestjs/typeorm/dist/common/typeorm.decorators';
 
@@ -18,7 +18,7 @@ import { InjectRepository } from '@nestjs/typeorm/dist/common/typeorm.decorators
 export class ProducersController {
   // Inject service vào controller
   constructor(
-    @InjectQueue('Producers') private producersQueue: Queue,
+    @InjectQueue('Producers') private producersQueue: Bull.Queue,
     private readonly producersService: ProducersService,
 
     @InjectRepository(ProducerLog)
