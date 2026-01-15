@@ -181,7 +181,8 @@
       <!-- <main class="flex-1 overflow-y-auto p-6"> -->
       <router-view />
       <!-- </main> -->
-
+    </div>
+  </div>
       <!-- Footer -->
       <footer class="bg-[#E7D2F9] py-3 sm:py-4">
         <div
@@ -190,8 +191,6 @@
           © 2025 Kafka Manager. All rights reserved.
         </div>
       </footer>
-    </div>
-  </div>
 </template>
 
 <script setup>
