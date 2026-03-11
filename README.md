@@ -63,7 +63,7 @@
 ## 🏗️ System Architecture
 
 <div align="center">
-  <img src="docs/system-architecture.png" width="500"/>
+  <img src="documents/system-architecture.png" width="500"/>
 </div>
 
 ### Flow hoạt động:
