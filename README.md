@@ -365,9 +365,6 @@ socket.on('consumer-status', (status) => {
 ---
 
 <div align="center">
-  
-**⭐ Nếu project hữu ích, đừng quên cho một Star! ⭐**
-
-Made with ❤️ by Nguyễn Văn Nhân
-
+  <p>Made with ❤️ by Nhân IT</p>
+  <p>⭐ Star this repo if you find it helpful!</p>
 </div>
